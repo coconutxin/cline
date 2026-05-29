@@ -38,10 +38,7 @@ const HistoryViewItem = ({
 	selectedItems,
 }: HistoryViewItemProps) => {
 	const [expanded, setExpanded] = useState(false)
-	const isWorkspaceMismatch =
-		item.workspaceMatchStatus === "mismatched" ||
-		item.workspaceMatchStatus === "WORKSPACE_MATCH_STATUS_MISMATCHED" ||
-		item.workspaceMatchStatus === 2
+	const isWorkspaceMismatch = item.workspaceMatchStatus === "mismatched"
 	const workspaceMismatchMessage = item.workspaceAffinityPath
 		? `This conversation belongs to another workspace: ${item.workspaceAffinityPath}`
 		: "This conversation belongs to another workspace."

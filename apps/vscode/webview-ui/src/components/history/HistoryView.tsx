@@ -1,5 +1,6 @@
+import { HistoryItem } from "@shared/HistoryItem"
 import { BooleanRequest, EmptyRequest, StringArrayRequest } from "@shared/proto/cline/common"
-import { GetTaskHistoryRequest, TaskFavoriteRequest } from "@shared/proto/cline/task"
+import { GetTaskHistoryRequest, TaskFavoriteRequest, WorkspaceMatchStatus } from "@shared/proto/cline/task"
 import { VSCodeTextField } from "@vscode/webview-ui-toolkit/react"
 import Fuse, { FuseResult } from "fuse.js"
 import { FunnelIcon } from "lucide-react"
@@ -35,6 +36,26 @@ const HISTORY_FILTERS = {
 	favoritesOnly: "Favorites Only",
 }
 
+const normalizeWorkspaceMatchStatus = (
+	workspaceMatchStatus?: WorkspaceMatchStatus | HistoryItem["workspaceMatchStatus"],
+): HistoryItem["workspaceMatchStatus"] => {
+	if (
+		workspaceMatchStatus === WorkspaceMatchStatus.WORKSPACE_MATCH_STATUS_MATCHED ||
+		workspaceMatchStatus === "matched"
+	) {
+		return "matched"
+	}
+
+	if (
+		workspaceMatchStatus === WorkspaceMatchStatus.WORKSPACE_MATCH_STATUS_MISMATCHED ||
+		workspaceMatchStatus === "mismatched"
+	) {
+		return "mismatched"
+	}
+
+	return "unknown"
+}
+
 const HistoryView = ({ onDone }: HistoryViewProps) => {
 	const extensionStateContext = useExtensionState()
 	const { taskHistory, onRelinquishControl, environment } = extensionStateContext
@@ -50,7 +71,7 @@ const HistoryView = ({ onDone }: HistoryViewProps) => {
 	const [pendingFavoriteToggles, setPendingFavoriteToggles] = useState<Record<string, boolean>>({})
 
 	// Load filtered task history with gRPC
-	const [tasks, setTasks] = useState<any[]>([])
+	const [tasks, setTasks] = useState<HistoryItem[]>([])
 
 	// Load and refresh task history
 	const loadTaskHistory = useCallback(async () => {
@@ -63,7 +84,14 @@ const HistoryView = ({ onDone }: HistoryViewProps) => {
 					currentWorkspaceOnly: showCurrentWorkspaceOnly,
 				}),
 			)
-			setTasks(response.tasks || [])
+			setTasks(
+				(response.tasks || []).map((task) => ({
+					...task,
+					modelId: task.modelId || undefined,
+					workspaceAffinityPath: task.workspaceAffinityPath || undefined,
+					workspaceMatchStatus: normalizeWorkspaceMatchStatus(task.workspaceMatchStatus),
+				})),
+			)
 		} catch (error) {
 			console.error("Error loading task history:", error)
 		}

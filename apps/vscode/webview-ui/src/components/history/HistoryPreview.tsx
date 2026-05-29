@@ -1,3 +1,4 @@
+import { HistoryItem } from "@shared/HistoryItem"
 import { StringRequest } from "@shared/proto/cline/common"
 import { memo } from "react"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
@@ -16,10 +17,8 @@ const HistoryPreview = ({ showHistoryView }: HistoryPreviewProps) => {
 		)
 	}
 
-	const isWorkspaceMismatch = (item: { workspaceMatchStatus?: string | number }) =>
-		item.workspaceMatchStatus === "mismatched" ||
-		item.workspaceMatchStatus === "WORKSPACE_MATCH_STATUS_MISMATCHED" ||
-		item.workspaceMatchStatus === 2
+	const isWorkspaceMismatch = (item: Pick<HistoryItem, "workspaceMatchStatus">) =>
+		item.workspaceMatchStatus === "mismatched"
 
 	const formatDate = (timestamp: number) => {
 		const date = new Date(timestamp)
