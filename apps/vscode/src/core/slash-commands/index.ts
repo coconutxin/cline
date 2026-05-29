@@ -1,6 +1,7 @@
 import type { ApiProviderInfo } from "@core/api"
 import { ClineRulesToggles } from "@shared/cline-rules"
 import { McpPromptResponse } from "@shared/mcp"
+import { ClineDefaultTool } from "@shared/tools"
 import fs from "fs/promises"
 import { telemetryService } from "@/services/telemetry"
 import { Logger } from "@/shared/services/Logger"
@@ -48,7 +49,11 @@ export async function parseSlashCommands(
 	enableNativeToolCalls?: boolean,
 	providerInfo?: ApiProviderInfo,
 	mcpPromptFetcher?: McpPromptFetcher,
-): Promise<{ processedText: string; needsClinerulesFileCheck: boolean }> {
+): Promise<{
+	processedText: string
+	needsClinerulesFileCheck: boolean
+	activeContextManagementTool?: ClineDefaultTool.CONDENSE
+}> {
 	const SUPPORTED_DEFAULT_COMMANDS = ["newtask", "smol", "compact", "newrule", "reportbug", "deep-planning", "explain-changes"]
 
 	// Determine if the current provider/model/setting actually uses native tool calling
@@ -134,11 +139,17 @@ export async function parseSlashCommands(
 				// remove the slash command and add custom instructions at the top of this message
 				const textWithoutSlashCommand = removeSlashCommand(text, tagContent, contentStartIndex, slashMatch)
 				const processedText = commandReplacements[commandName] + textWithoutSlashCommand
+				const activeContextManagementTool =
+					commandName === "smol" || commandName === "compact" ? ClineDefaultTool.CONDENSE : undefined
 
 				// Track telemetry for builtin slash command usage
 				telemetryService.captureSlashCommandUsed(ulid, commandName, "builtin")
 
-				return { processedText: processedText, needsClinerulesFileCheck: commandName === "newrule" }
+				return {
+					processedText,
+					needsClinerulesFileCheck: commandName === "newrule",
+					activeContextManagementTool,
+				}
 			}
 
 			// Check for MCP prompt commands (format: mcp:<server>:<prompt>)

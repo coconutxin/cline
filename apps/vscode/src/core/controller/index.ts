@@ -58,6 +58,7 @@ import { getClineOnboardingModels } from "./models/getClineOnboardingModels"
 import { appendClineStealthModels } from "./models/refreshOpenRouterModels"
 import { checkCliInstallation } from "./state/checkCliInstallation"
 import { sendStateUpdate } from "./state/subscribeToState"
+import { checkHistoryItemWorkspaceAffinity, type WorkspaceAffinityCheckResult } from "./task/workspaceAffinity"
 import { sendChatButtonClickedEvent } from "./ui/subscribeToChatButtonClicked"
 
 /*
@@ -338,8 +339,49 @@ export class Controller {
 	async reinitExistingTaskFromId(taskId: string) {
 		const history = await this.getTaskWithId(taskId)
 		if (history) {
+			if (!(await this.ensureHistoryItemMatchesCurrentWorkspace(history.historyItem))) {
+				return
+			}
 			await this.initTask(undefined, undefined, undefined, history.historyItem)
 		}
+	}
+
+	async ensureHistoryItemMatchesCurrentWorkspace(historyItem: HistoryItem): Promise<boolean> {
+		const workspaceManager = await this.ensureWorkspaceManager()
+		const affinity = checkHistoryItemWorkspaceAffinity(historyItem, workspaceManager?.getRoots() ?? [])
+
+		if (affinity.status === "unknown") {
+			Logger.warn(
+				`[Controller] Workspace affinity unknown for task ${historyItem.id}; allowing resume for legacy compatibility`,
+			)
+			return true
+		}
+
+		if (affinity.matches) {
+			return true
+		}
+
+		await this.handleHistoryItemWorkspaceMismatch(historyItem, affinity)
+		return false
+	}
+
+	private async handleHistoryItemWorkspaceMismatch(
+		historyItem: HistoryItem,
+		affinity: WorkspaceAffinityCheckResult,
+	): Promise<void> {
+		const currentWorkspaces = affinity.currentWorkspacePaths.join(", ") || "no open workspace"
+		Logger.warn(
+			`[Controller] Refusing to resume task ${historyItem.id} from workspace "${affinity.taskWorkspacePath}" while current workspace is "${currentWorkspaces}"`,
+		)
+
+		await this.clearTask()
+		await this.postStateToWebview()
+		await sendChatButtonClickedEvent()
+		await HostProvider.window.showMessage({
+			type: ShowMessageType.WARNING,
+			message:
+				"This conversation belongs to a different workspace. Cline returned to the main chat to prevent running in the wrong project.",
+		})
 	}
 
 	async updateTelemetrySetting(telemetrySetting: TelemetrySetting) {
@@ -478,10 +520,10 @@ export class Controller {
 			}
 
 			// Only re-initialize if we found a history item, otherwise just clear
-			if (historyItem) {
+			if (historyItem && (await this.ensureHistoryItemMatchesCurrentWorkspace(historyItem))) {
 				// Re-initialize task to keep it visible in UI with resume button
 				await this.initTask(undefined, undefined, undefined, historyItem, undefined)
-			} else {
+			} else if (!historyItem) {
 				await this.clearTask()
 			}
 
@@ -905,6 +947,14 @@ export class Controller {
 			.filter((item) => item.ts && item.task)
 			.sort((a, b) => b.ts - a.ts)
 			.slice(0, 100) // for now we're only getting the latest 100 tasks, but a better solution here is to only pass in 3 for recent task history, and then get the full task history on demand when going to the task history view (maybe with pagination?)
+			.map((item) => {
+				const affinity = checkHistoryItemWorkspaceAffinity(item, this.workspaceManager?.getRoots() ?? [])
+				return {
+					...item,
+					workspaceMatchStatus: affinity.status,
+					workspaceAffinityPath: affinity.taskWorkspacePath,
+				}
+			})
 
 		const latestAnnouncementId = getLatestAnnouncementId()
 		const shouldShowAnnouncement = lastShownAnnouncementId !== latestAnnouncementId

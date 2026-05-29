@@ -14,6 +14,7 @@ import {
 } from "lucide-react"
 import { memo, useCallback, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 import { TaskServiceClient } from "@/services/grpc-client"
 import { formatLargeNumber, formatSize } from "@/utils/format"
@@ -37,6 +38,13 @@ const HistoryViewItem = ({
 	selectedItems,
 }: HistoryViewItemProps) => {
 	const [expanded, setExpanded] = useState(false)
+	const isWorkspaceMismatch =
+		item.workspaceMatchStatus === "mismatched" ||
+		item.workspaceMatchStatus === "WORKSPACE_MATCH_STATUS_MISMATCHED" ||
+		item.workspaceMatchStatus === 2
+	const workspaceMismatchMessage = item.workspaceAffinityPath
+		? `This conversation belongs to another workspace: ${item.workspaceAffinityPath}`
+		: "This conversation belongs to another workspace."
 
 	const isFavoritedItem = useMemo(
 		() => pendingFavoriteToggles[item.id] ?? item.isFavorited,
@@ -76,7 +84,11 @@ const HistoryViewItem = ({
 	}, [])
 
 	return (
-		<div className="history-item cursor-pointer flex group mb-1 hover:bg-list-hover border-b border-accent/10" key={item.id}>
+		<div
+			className={cn("history-item cursor-pointer flex group mb-1 hover:bg-list-hover border-b border-accent/10", {
+				"opacity-75": isWorkspaceMismatch,
+			})}
+			key={item.id}>
 			<VSCodeCheckbox
 				checked={selectedItems.includes(item.id)}
 				className="pl-3 pr-1 py-auto self-start mt-3"
@@ -95,6 +107,16 @@ const HistoryViewItem = ({
 					handleShowTaskWithId(item.id)
 				}}>
 				<div className="flex items-center gap-2">
+					{isWorkspaceMismatch && (
+						<Tooltip>
+							<TooltipTrigger asChild>
+								<span className="flex items-center text-description" onClick={(e) => e.stopPropagation()}>
+									<i className="codicon codicon-warning text-sm" />
+								</span>
+							</TooltipTrigger>
+							<TooltipContent side="top">{workspaceMismatchMessage}</TooltipContent>
+						</Tooltip>
+					)}
 					<div className="line-clamp-1 overflow-hidden break-words whitespace-pre-wrap flex-1 min-w-0">
 						<span className="ph-no-capture">{item.task}</span>
 					</div>
@@ -129,6 +151,12 @@ const HistoryViewItem = ({
 						</Button>
 					</div>
 				</div>
+				{isWorkspaceMismatch && (
+					<div className="flex items-center gap-1 text-description text-xs">
+						<i className="codicon codicon-warning text-xs" />
+						<span>Other workspace</span>
+					</div>
+				)}
 
 				<Button
 					className="p-0"

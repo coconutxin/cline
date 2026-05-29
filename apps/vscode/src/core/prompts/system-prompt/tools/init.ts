@@ -6,6 +6,7 @@ import { apply_patch_variants } from "./apply_patch"
 import { ask_followup_question_variants } from "./ask_followup_question"
 import { attempt_completion_variants } from "./attempt_completion"
 import { browser_action_variants } from "./browser_action"
+import { condense_variants } from "./condense"
 import { execute_command_variants } from "./execute_command"
 import { focus_chain_variants } from "./focus_chain"
 import { generate_explanation_variants } from "./generate_explanation"
@@ -18,6 +19,7 @@ import { read_file_variants } from "./read_file"
 import { replace_in_file_variants } from "./replace_in_file"
 import { search_files_variants } from "./search_files"
 import { subagent_variants } from "./subagent"
+import { summarize_task_variants } from "./summarize_task"
 import { use_mcp_tool_variants } from "./use_mcp_tool"
 import { use_skill_variants } from "./use_skill"
 import { web_fetch_variants } from "./web_fetch"
@@ -37,6 +39,7 @@ export function registerClineToolSets(): void {
 		...ask_followup_question_variants,
 		...attempt_completion_variants,
 		...browser_action_variants,
+		...condense_variants,
 		...execute_command_variants,
 		...focus_chain_variants,
 		...generate_explanation_variants,
@@ -49,6 +52,7 @@ export function registerClineToolSets(): void {
 		...replace_in_file_variants,
 		...search_files_variants,
 		...subagent_variants,
+		...summarize_task_variants,
 		...use_mcp_tool_variants,
 		...use_skill_variants,
 		...web_fetch_variants,

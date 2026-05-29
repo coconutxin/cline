@@ -1,6 +1,8 @@
 import { expect } from "chai"
 import type { McpHub } from "@/services/mcp/McpHub"
 import { ModelFamily } from "@/shared/prompts"
+import { ClineDefaultTool } from "@/shared/tools"
+import { ClineToolSet } from ".."
 import { PromptRegistry } from "../registry/PromptRegistry"
 import type { SystemPromptContext } from "../types"
 import { mockProviderInfo } from "./integration.test"
@@ -104,6 +106,23 @@ describe("PromptRegistry", () => {
 	})
 
 	describe("native tools", () => {
+		it("should restrict compaction contexts to summarize_task plus attempt_completion", () => {
+			const variant = registry.getVariant({
+				...mockContext,
+				activeContextManagementTool: ClineDefaultTool.SUMMARIZE_TASK,
+			})
+
+			const enabledTools = ClineToolSet.getEnabledToolSpecs(variant, {
+				...mockContext,
+				activeContextManagementTool: ClineDefaultTool.SUMMARIZE_TASK,
+			})
+			const toolIds = enabledTools.map((tool) => tool.id)
+
+			expect(toolIds).to.include(ClineDefaultTool.SUMMARIZE_TASK)
+			expect(toolIds).to.include(ClineDefaultTool.ATTEMPT)
+			expect(toolIds).to.not.include(ClineDefaultTool.NEW_TASK)
+		})
+
 		it("should not include focus_chain in native tools output", async () => {
 			const nativeContext: SystemPromptContext = {
 				...mockContext,
@@ -130,6 +149,34 @@ describe("PromptRegistry", () => {
 
 			expect(toolNames).to.not.include("focus_chain")
 			expect(JSON.stringify(nativeTools)).to.not.include('"focus_chain"')
+		})
+
+		it("should expose condense and hide new_task during compact command native tool generation", async () => {
+			const nativeContext: SystemPromptContext = {
+				...mockContext,
+				enableNativeToolCalls: true,
+				activeContextManagementTool: ClineDefaultTool.CONDENSE,
+				providerInfo: {
+					...mockProviderInfo,
+					providerId: "vertex",
+					model: { ...mockProviderInfo.model, id: "gemini3" },
+				},
+			}
+
+			await registry.get(nativeContext)
+			const nativeTools = registry.nativeTools
+			expect(nativeTools).to.be.an("array").that.is.not.empty
+
+			const toolNames = (nativeTools as any[]).map((tool) => {
+				if (tool?.type === "function") {
+					return tool.function?.name
+				}
+				return tool?.name
+			})
+
+			expect(toolNames).to.include("condense")
+			expect(toolNames).to.not.include("new_task")
+			expect(toolNames).to.not.include("summarize_task")
 		})
 	})
 

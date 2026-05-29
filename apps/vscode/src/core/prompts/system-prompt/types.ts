@@ -125,6 +125,7 @@ export interface SystemPromptContext {
 	readonly isCliEnvironment?: boolean
 	readonly enableNativeToolCalls?: boolean
 	readonly enableParallelToolCalling?: boolean
+	readonly activeContextManagementTool?: ClineDefaultTool.CONDENSE | ClineDefaultTool.SUMMARIZE_TASK
 	readonly terminalExecutionMode?: "vscodeTerminal" | "backgroundExec"
 }
 

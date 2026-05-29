@@ -86,7 +86,15 @@ export class ClineToolSet {
 
 	public static getEnabledTools(variant: PromptVariant, context: SystemPromptContext): ClineToolSet[] {
 		const resolved: ClineToolSet[] = []
-		const requestedIds = variant.tools ? [...variant.tools] : []
+		let requestedIds = variant.tools ? [...variant.tools] : []
+
+		if (context.activeContextManagementTool) {
+			requestedIds =
+				context.activeContextManagementTool === ClineDefaultTool.SUMMARIZE_TASK
+					? [ClineDefaultTool.ATTEMPT, ClineDefaultTool.SUMMARIZE_TASK, ClineDefaultTool.TODO]
+					: [ClineDefaultTool.CONDENSE, ClineDefaultTool.TODO]
+		}
+
 		for (const id of requestedIds) {
 			const tool = ClineToolSet.getToolByNameWithFallback(id, variant.family)
 			if (tool) {

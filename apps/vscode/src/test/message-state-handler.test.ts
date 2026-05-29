@@ -1,9 +1,15 @@
 import { describe, it } from "mocha"
 import "should"
 import should from "should"
+import fs from "fs/promises"
+import os from "os"
+import path from "path"
 import { MessageStateHandler } from "../core/task/message-state"
 import { TaskState } from "../core/task/TaskState"
 import { ClineMessage } from "../shared/ExtensionMessage"
+import { HistoryItem } from "../shared/HistoryItem"
+import { HostProvider } from "@/hosts/host-provider"
+import { setVscodeHostProviderMock } from "@/test/host-provider-test-utils"
 
 /**
  * Unit tests for MessageStateHandler's mutex protection (RC-4)
@@ -56,6 +62,38 @@ describe("MessageStateHandler Mutex Protection", () => {
 
 		handler.setClineMessages(testMessages)
 		handler.getClineMessages().should.deepEqual(testMessages)
+	})
+
+	it("should preserve the task initialization cwd when updating history", async () => {
+		const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "message-state-handler-test-"))
+		setVscodeHostProviderMock({ globalStorageFsPath: tempDir })
+
+		const taskState = new TaskState()
+		let updatedHistoryItem: HistoryItem | undefined
+		const handler = new MessageStateHandler({
+			taskId: "test-task-id",
+			ulid: "test-ulid",
+			taskState,
+			cwdOnTaskInitialization: "/original/workspace",
+			updateTaskHistory: async (historyItem) => {
+				updatedHistoryItem = historyItem
+				return [historyItem]
+			},
+		})
+
+		handler.setApiConversationHistory([{ role: "user", content: "initial task" }])
+		await handler.addToClineMessages({
+			ts: Date.now(),
+			type: "say",
+			say: "task",
+			text: "test task",
+		})
+
+		should.exist(updatedHistoryItem)
+		updatedHistoryItem?.cwdOnTaskInitialization?.should.equal("/original/workspace")
+
+		HostProvider.reset()
+		await fs.rm(tempDir, { recursive: true, force: true })
 	})
 
 	/**

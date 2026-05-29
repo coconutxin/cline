@@ -1,4 +1,5 @@
 import type { McpPromptResponse } from "@shared/mcp"
+import { ClineDefaultTool } from "@shared/tools"
 import { expect } from "chai"
 import { formatMcpPromptResponse, McpPromptFetcher, parseSlashCommands } from "../index"
 
@@ -140,5 +141,15 @@ describe("slash-commands", () => {
 		// Note: Tests for "unknown MCP server", "no fetcher", and "fetcher errors"
 		// are skipped because they require StateManager initialization when falling
 		// through to workflow checking. The core MCP functionality is covered above.
+	})
+
+	describe("parseSlashCommands built-in context management commands", () => {
+		it("should mark /compact as a condense context-management request", async () => {
+			const text = "<task>/compact Please keep going</task>"
+			const result = await parseSlashCommands(text, {}, {}, "test-ulid")
+
+			expect(result.activeContextManagementTool).to.equal(ClineDefaultTool.CONDENSE)
+			expect(result.processedText).to.include('type="condense"')
+		})
 	})
 })

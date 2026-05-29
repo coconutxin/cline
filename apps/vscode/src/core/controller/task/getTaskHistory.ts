@@ -1,7 +1,7 @@
-import { GetTaskHistoryRequest, TaskHistoryArray } from "@shared/proto/cline/task"
+import { GetTaskHistoryRequest, TaskHistoryArray, WorkspaceMatchStatus } from "@shared/proto/cline/task"
 import { Logger } from "@/shared/services/Logger"
-import { arePathsEqual, getWorkspacePath } from "../../../utils/path"
 import { Controller } from ".."
+import { checkHistoryItemWorkspaceAffinity } from "./workspaceAffinity"
 
 /**
  * Gets filtered task history
@@ -15,7 +15,8 @@ export async function getTaskHistory(controller: Controller, request: GetTaskHis
 
 		// Get task history from global state
 		const taskHistory = controller.stateManager.getGlobalStateKey("taskHistory")
-		const workspacePath = await getWorkspacePath()
+		const workspaceManager = await controller.ensureWorkspaceManager()
+		const workspaceRoots = workspaceManager?.getRoots() ?? []
 
 		// Apply filters
 		let filteredTasks = taskHistory.filter((item) => {
@@ -32,23 +33,8 @@ export async function getTaskHistory(controller: Controller, request: GetTaskHis
 
 			// Apply current workspace filter if requested
 			if (currentWorkspaceOnly) {
-				let isInWorkspace = false
-
-				// First check the cwdOnTaskInitialization property - Only present on tasks from this change forward
-				if (item.cwdOnTaskInitialization) {
-					if (arePathsEqual(item.cwdOnTaskInitialization, workspacePath)) {
-						isInWorkspace = true
-					}
-				}
-
-				// For tasks without cwdOnTaskInitialization, check the older shadowGitConfigWorkTree property
-				if (!isInWorkspace && item.shadowGitConfigWorkTree) {
-					if (arePathsEqual(item.shadowGitConfigWorkTree, workspacePath)) {
-						isInWorkspace = true
-					}
-				}
-
-				if (!isInWorkspace) {
+				const affinity = checkHistoryItemWorkspaceAffinity(item, workspaceRoots)
+				if (affinity.status !== "matched") {
 					return false
 				}
 			}
@@ -93,19 +79,30 @@ export async function getTaskHistory(controller: Controller, request: GetTaskHis
 		}
 
 		// Map to response format
-		const tasks = filteredTasks.map((item) => ({
-			id: item.id,
-			task: item.task,
-			ts: item.ts,
-			isFavorited: item.isFavorited || false,
-			size: item.size || 0,
-			totalCost: item.totalCost || 0,
-			tokensIn: item.tokensIn || 0,
-			tokensOut: item.tokensOut || 0,
-			cacheWrites: item.cacheWrites || 0,
-			cacheReads: item.cacheReads || 0,
-			modelId: item.modelId || "",
-		}))
+		const tasks = filteredTasks.map((item) => {
+			const affinity = checkHistoryItemWorkspaceAffinity(item, workspaceRoots)
+
+			return {
+				id: item.id,
+				task: item.task,
+				ts: item.ts,
+				isFavorited: item.isFavorited || false,
+				size: item.size || 0,
+				totalCost: item.totalCost || 0,
+				tokensIn: item.tokensIn || 0,
+				tokensOut: item.tokensOut || 0,
+				cacheWrites: item.cacheWrites || 0,
+				cacheReads: item.cacheReads || 0,
+				modelId: item.modelId || "",
+				workspaceMatchStatus:
+					affinity.status === "matched"
+						? WorkspaceMatchStatus.WORKSPACE_MATCH_STATUS_MATCHED
+						: affinity.status === "mismatched"
+							? WorkspaceMatchStatus.WORKSPACE_MATCH_STATUS_MISMATCHED
+							: WorkspaceMatchStatus.WORKSPACE_MATCH_STATUS_UNKNOWN,
+				workspaceAffinityPath: affinity.taskWorkspacePath || "",
+			}
+		})
 
 		return TaskHistoryArray.create({
 			tasks,

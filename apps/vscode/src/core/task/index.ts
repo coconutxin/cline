@@ -377,6 +377,10 @@ export class Task {
 			taskState: this.taskState,
 			taskIsFavorited: this.taskIsFavorited,
 			updateTaskHistory: this.updateTaskHistory,
+			cwdOnTaskInitialization: historyItem
+				? historyItem.cwdOnTaskInitialization || historyItem.shadowGitConfigWorkTree
+				: cwd,
+			shadowGitConfigWorkTree: historyItem?.shadowGitConfigWorkTree,
 		})
 
 		// Initialize context trackers
@@ -1988,6 +1992,7 @@ export class Task {
 				providerInfo.model.info.apiFormat === ApiFormat.OPENAI_RESPONSES ||
 				this.stateManager.getGlobalStateKey("nativeToolCallEnabled"),
 			enableParallelToolCalling: this.isParallelToolCallingEnabled(),
+			activeContextManagementTool: this.taskState.activeContextManagementTool,
 			terminalExecutionMode: this.terminalExecutionMode,
 		}
 
@@ -2544,6 +2549,7 @@ export class Task {
 
 		// Determine if we should compact context window
 		// Note: We delay context loading until we know if we're compacting (performance optimization)
+		this.taskState.activeContextManagementTool = undefined
 		const useCompactPrompt = customPrompt === "compact" && isLocalModel(this.getCurrentProviderInfo())
 		let shouldCompact = false
 		const useAutoCondense = this.stateManager.getGlobalSettingsKey("useAutoCondense")
@@ -2612,6 +2618,7 @@ export class Task {
 			environmentDetails = ""
 			clinerulesError = false
 			this.taskState.lastAutoCompactTriggerIndex = previousApiReqIndex
+			this.taskState.activeContextManagementTool = ClineDefaultTool.SUMMARIZE_TASK
 		} else {
 			// When NOT compacting, load full context with mentions parsing and slash commands
 			;[parsedUserContent, environmentDetails, clinerulesError] = await this.loadContext(
@@ -3393,7 +3400,11 @@ export class Task {
 				}
 			}
 
-			const { processedText, needsClinerulesFileCheck: needsCheck } = await parseSlashCommands(
+			const {
+				processedText,
+				needsClinerulesFileCheck: needsCheck,
+				activeContextManagementTool,
+			} = await parseSlashCommands(
 				parsedText,
 				localWorkflowToggles,
 				globalWorkflowToggles,
@@ -3406,6 +3417,10 @@ export class Task {
 
 			if (needsCheck) {
 				needsClinerulesFileCheck = true
+			}
+
+			if (activeContextManagementTool) {
+				this.taskState.activeContextManagementTool = activeContextManagementTool
 			}
 
 			return processedText
@@ -3464,6 +3479,10 @@ export class Task {
 		const clinerulesError = needsClinerulesFileCheck
 			? await ensureLocalClineDirExists(this.cwd, GlobalFileNames.clineRules)
 			: false
+
+		if (!this.taskState.activeContextManagementTool) {
+			this.taskState.activeContextManagementTool = undefined
+		}
 
 		// Add focus chain instructions if needed
 		if (!useCompactPrompt && this.FocusChainManager?.shouldIncludeFocusChainInstructions()) {

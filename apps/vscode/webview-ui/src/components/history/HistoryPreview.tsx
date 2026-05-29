@@ -1,5 +1,6 @@
 import { StringRequest } from "@shared/proto/cline/common"
 import { memo } from "react"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { useExtensionState } from "@/context/ExtensionStateContext"
 import { TaskServiceClient } from "@/services/grpc-client"
 
@@ -14,6 +15,11 @@ const HistoryPreview = ({ showHistoryView }: HistoryPreviewProps) => {
 			console.error("Error showing task:", error),
 		)
 	}
+
+	const isWorkspaceMismatch = (item: { workspaceMatchStatus?: string | number }) =>
+		item.workspaceMatchStatus === "mismatched" ||
+		item.workspaceMatchStatus === "WORKSPACE_MATCH_STATUS_MISMATCHED" ||
+		item.workspaceMatchStatus === 2
 
 	const formatDate = (timestamp: number) => {
 		const date = new Date(timestamp)
@@ -146,9 +152,31 @@ const HistoryPreview = ({ showHistoryView }: HistoryPreviewProps) => {
 						taskHistory
 							.filter((item) => item.ts && item.task)
 							.slice(0, 3)
-							.map((item) => (
-								<div className="history-preview-item" key={item.id} onClick={() => handleHistorySelect(item.id)}>
+							.map((item) => {
+								const mismatch = isWorkspaceMismatch(item)
+								const workspaceMismatchMessage = item.workspaceAffinityPath
+									? `This conversation belongs to another workspace: ${item.workspaceAffinityPath}`
+									: "This conversation belongs to another workspace."
+
+								return (
+								<div
+									className="history-preview-item"
+									key={item.id}
+									onClick={() => handleHistorySelect(item.id)}
+									style={mismatch ? { opacity: 0.75 } : undefined}>
 									<div className="history-task-content">
+										{mismatch && (
+											<Tooltip>
+												<TooltipTrigger asChild>
+													<span
+														className="codicon codicon-warning"
+														onClick={(e) => e.stopPropagation()}
+														style={{ color: "var(--vscode-descriptionForeground)", flexShrink: 0 }}
+													/>
+												</TooltipTrigger>
+												<TooltipContent side="top">{workspaceMismatchMessage}</TooltipContent>
+											</Tooltip>
+										)}
 										{item.isFavorited && (
 											<span
 												aria-label="Favorited"
@@ -162,13 +190,15 @@ const HistoryPreview = ({ showHistoryView }: HistoryPreviewProps) => {
 										<div className="history-task-description ph-no-capture">{item.task}</div>
 									</div>
 									<div className="history-meta-stack">
+										{mismatch && <span className="history-date">Other workspace</span>}
 										<span className="history-date">{formatDate(item.ts)}</span>
 										{item.totalCost != null && (
 											<span className="history-cost-chip">${item.totalCost.toFixed(2)}</span>
 										)}
 									</div>
 								</div>
-							))
+								)
+							})
 					) : (
 						<div
 							style={{

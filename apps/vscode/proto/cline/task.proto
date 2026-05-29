@@ -90,6 +90,12 @@ message TaskHistoryArray {
   int32 total_count = 2;
 }
 
+enum WorkspaceMatchStatus {
+  WORKSPACE_MATCH_STATUS_UNKNOWN = 0;
+  WORKSPACE_MATCH_STATUS_MATCHED = 1;
+  WORKSPACE_MATCH_STATUS_MISMATCHED = 2;
+}
+
 // Task item details for history list
 message TaskItem {
   string id = 1;
@@ -103,6 +109,8 @@ message TaskItem {
   int32 cache_writes = 9;
   int32 cache_reads = 10;
   string model_id = 11;
+  WorkspaceMatchStatus workspace_match_status = 12;
+  string workspace_affinity_path = 13;
 }
 
 // Request for ask response operation

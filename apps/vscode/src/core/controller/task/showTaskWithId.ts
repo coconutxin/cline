@@ -4,6 +4,34 @@ import { Logger } from "@/shared/services/Logger"
 import { Controller } from ".."
 import { sendChatButtonClickedEvent } from "../ui/subscribeToChatButtonClicked"
 
+function createTaskResponse(historyItem: {
+	id: string
+	task?: string
+	ts?: number
+	isFavorited?: boolean
+	size?: number
+	totalCost?: number
+	tokensIn?: number
+	tokensOut?: number
+	cacheWrites?: number
+	cacheReads?: number
+	modelId?: string
+}): TaskResponse {
+	return TaskResponse.create({
+		id: historyItem.id,
+		task: historyItem.task || "",
+		ts: historyItem.ts || 0,
+		isFavorited: historyItem.isFavorited || false,
+		size: historyItem.size || 0,
+		totalCost: historyItem.totalCost || 0,
+		tokensIn: historyItem.tokensIn || 0,
+		tokensOut: historyItem.tokensOut || 0,
+		cacheWrites: historyItem.cacheWrites || 0,
+		cacheReads: historyItem.cacheReads || 0,
+		modelId: historyItem.modelId || "",
+	})
+}
+
 /**
  * Shows a task with the specified ID
  * @param controller The controller instance
@@ -20,6 +48,10 @@ export async function showTaskWithId(controller: Controller, request: StringRequ
 
 		// We need to initialize the task before returning data
 		if (historyItem) {
+			if (!(await controller.ensureHistoryItemMatchesCurrentWorkspace(historyItem))) {
+				return createTaskResponse(historyItem)
+			}
+
 			// Always initialize the task with the history item
 			await controller.initTask(undefined, undefined, undefined, historyItem)
 
@@ -27,22 +59,14 @@ export async function showTaskWithId(controller: Controller, request: StringRequ
 			await sendChatButtonClickedEvent()
 
 			// Return task data for gRPC response
-			return TaskResponse.create({
-				id: historyItem.id,
-				task: historyItem.task || "",
-				ts: historyItem.ts || 0,
-				isFavorited: historyItem.isFavorited || false,
-				size: historyItem.size || 0,
-				totalCost: historyItem.totalCost || 0,
-				tokensIn: historyItem.tokensIn || 0,
-				tokensOut: historyItem.tokensOut || 0,
-				cacheWrites: historyItem.cacheWrites || 0,
-				cacheReads: historyItem.cacheReads || 0,
-			})
+			return createTaskResponse(historyItem)
 		}
 
 		// If not in global state, fetch from storage
 		const { historyItem: fetchedItem } = await controller.getTaskWithId(id)
+		if (!(await controller.ensureHistoryItemMatchesCurrentWorkspace(fetchedItem))) {
+			return createTaskResponse(fetchedItem)
+		}
 
 		// Initialize the task with the fetched item
 		await controller.initTask(undefined, undefined, undefined, fetchedItem)
@@ -50,18 +74,7 @@ export async function showTaskWithId(controller: Controller, request: StringRequ
 		// Send UI update to show the chat view
 		await sendChatButtonClickedEvent()
 
-		return TaskResponse.create({
-			id: fetchedItem.id,
-			task: fetchedItem.task || "",
-			ts: fetchedItem.ts || 0,
-			isFavorited: fetchedItem.isFavorited || false,
-			size: fetchedItem.size || 0,
-			totalCost: fetchedItem.totalCost || 0,
-			tokensIn: fetchedItem.tokensIn || 0,
-			tokensOut: fetchedItem.tokensOut || 0,
-			cacheWrites: fetchedItem.cacheWrites || 0,
-			cacheReads: fetchedItem.cacheReads || 0,
-		})
+		return createTaskResponse(fetchedItem)
 	} catch (error) {
 		Logger.error("Error in showTaskWithId:", error)
 		throw error

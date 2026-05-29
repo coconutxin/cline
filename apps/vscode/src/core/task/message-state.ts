@@ -10,7 +10,6 @@ import { getApiMetrics } from "@/shared/getApiMetrics"
 import { HistoryItem } from "@/shared/HistoryItem"
 import { ClineStorageMessage } from "@/shared/messages/content"
 import { Logger } from "@/shared/services/Logger"
-import { getCwd, getDesktopDir } from "@/utils/path"
 import { ensureTaskDirectoryExists, saveApiConversationHistory, saveClineMessages } from "../storage/disk"
 import { TaskState } from "./TaskState"
 
@@ -42,6 +41,8 @@ interface MessageStateHandlerParams {
 	taskIsFavorited?: boolean
 	updateTaskHistory: (historyItem: HistoryItem) => Promise<HistoryItem[]>
 	taskState: TaskState
+	cwdOnTaskInitialization?: string
+	shadowGitConfigWorkTree?: string
 	checkpointManagerErrorMessage?: string
 }
 
@@ -54,6 +55,8 @@ export class MessageStateHandler extends EventEmitter<MessageStateHandlerEvents>
 	private taskId: string
 	private ulid: string
 	private taskState: TaskState
+	private readonly cwdOnTaskInitialization?: string
+	private shadowGitConfigWorkTree?: string
 
 	// Mutex to prevent concurrent state modifications (RC-4)
 	// Protects against data loss from race conditions when multiple
@@ -68,6 +71,8 @@ export class MessageStateHandler extends EventEmitter<MessageStateHandlerEvents>
 		this.taskState = params.taskState
 		this.taskIsFavorited = params.taskIsFavorited ?? false
 		this.updateTaskHistory = params.updateTaskHistory
+		this.cwdOnTaskInitialization = params.cwdOnTaskInitialization
+		this.shadowGitConfigWorkTree = params.shadowGitConfigWorkTree
 	}
 
 	/**
@@ -141,7 +146,10 @@ export class MessageStateHandler extends EventEmitter<MessageStateHandlerEvents>
 			} catch (error) {
 				Logger.error("Failed to get task directory size:", taskDir, error)
 			}
-			const cwd = await getCwd(getDesktopDir())
+			const latestShadowGitConfigWorkTree = await this.checkpointTracker?.getShadowGitConfigWorkTree()
+			if (latestShadowGitConfigWorkTree) {
+				this.shadowGitConfigWorkTree = latestShadowGitConfigWorkTree
+			}
 			await this.updateTaskHistory({
 				id: this.taskId,
 				ulid: this.ulid,
@@ -153,8 +161,8 @@ export class MessageStateHandler extends EventEmitter<MessageStateHandlerEvents>
 				cacheReads: apiMetrics.totalCacheReads,
 				totalCost: apiMetrics.totalCost,
 				size: taskDirSize,
-				shadowGitConfigWorkTree: await this.checkpointTracker?.getShadowGitConfigWorkTree(),
-				cwdOnTaskInitialization: cwd,
+				shadowGitConfigWorkTree: this.shadowGitConfigWorkTree,
+				cwdOnTaskInitialization: this.cwdOnTaskInitialization,
 				conversationHistoryDeletedRange: this.taskState.conversationHistoryDeletedRange,
 				isFavorited: this.taskIsFavorited,
 				checkpointManagerErrorMessage: this.taskState.checkpointManagerErrorMessage,
