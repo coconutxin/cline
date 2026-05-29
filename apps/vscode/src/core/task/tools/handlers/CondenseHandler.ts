@@ -1,4 +1,5 @@
 import type { ToolUse } from "@core/assistant-message"
+import { buildCondensedContextHandoff } from "@core/prompts/contextManagement"
 import { formatResponse } from "@core/prompts/responses"
 import { ensureTaskDirectoryExists } from "@core/storage/disk"
 import { processFilesIntoText } from "@integrations/misc/extract-text"
@@ -73,6 +74,11 @@ export class CondenseHandler implements IToolHandler, IPartialBlockHandler {
 				await ensureTaskDirectoryExists(config.taskId),
 				apiConversationHistory,
 			)
+
+			config.taskState.userMessageContent.push({
+				type: "text",
+				text: buildCondensedContextHandoff(context, "manual"),
+			})
 
 			return formatResponse.toolResult(formatResponse.condense())
 		}

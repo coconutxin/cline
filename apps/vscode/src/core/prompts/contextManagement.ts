@@ -109,10 +109,40 @@ ${
 `
 }
 
-export const continuationPrompt = (summaryText: string) => `
-This session is being continued from a previous conversation that ran out of context. The conversation is summarized below:
-${summaryText}.
+export type CondensedContextSource = "auto" | "manual"
 
-Please continue the conversation from where we left it off without asking the user any further questions. Continue with the last task that you were asked to work on. Pay special attention to the most recent user message when responding rather than the initial task message, if applicable.
+export const sanitizeCondensedSummary = (summaryText: string) => {
+	const withoutLeadingThinking = summaryText.replace(/^\s*(?:<thinking>[\s\S]*?<\/thinking>\s*)+/, "")
+	return withoutLeadingThinking.trim()
+}
+
+export const buildCondensedContextHandoff = (summaryText: string, source: CondensedContextSource) => {
+	const sanitizedSummary = sanitizeCondensedSummary(summaryText)
+	const authoritativeSummary = sanitizedSummary || summaryText.trim()
+	const sourceDescription =
+		source === "auto"
+			? "automatically due to context pressure"
+			: "manually and approved by the user"
+	const continuationInstructions =
+		source === "auto"
+			? "Continue the conversation from where we left it off without asking the user any further questions. Continue with the last task that you were asked to work on."
+			: "Use this condensed context as the authoritative history for future task continuation. Follow any additional instructions elsewhere in this message."
+
+	return `<condensed_context source="${source}">
+This historical conversation was condensed ${sourceDescription}, and earlier turns have been truncated.
+The summary below is the authoritative context for the truncated conversation history.
+You MUST treat it as the primary source of truth for prior work.
+You MUST NOT ignore it or reload broad rules, snapshots, plans, or previously-read context unless this summary or the user's next message makes that necessary.
+If current file contents are attached after this block, treat them as already-loaded context and do not re-read them unless you need to verify that they changed.
+<authoritative_summary>
+${authoritativeSummary}
+</authoritative_summary>
+</condensed_context>
+
+${continuationInstructions}
+Pay special attention to the most recent user message when responding rather than the initial task message, if applicable.
 If the most recent user's message starts with "/newtask", "/smol", "/compact", "/newrule", or "/reportbug", you should indicate to the user that they will need to run this command again.
 `
+}
+
+export const continuationPrompt = (summaryText: string) => buildCondensedContextHandoff(summaryText, "auto")

@@ -2,7 +2,7 @@ import type { ToolUse } from "@core/assistant-message"
 import { getHookModelContext } from "@core/hooks/hook-model-context"
 import { getHooksEnabledSafe } from "@core/hooks/hooks-utils"
 import { executePreCompactHookWithCleanup, HookCancellationError } from "@core/hooks/precompact-executor"
-import { continuationPrompt } from "@core/prompts/contextManagement"
+import { buildCondensedContextHandoff } from "@core/prompts/contextManagement"
 import { formatResponse } from "@core/prompts/responses"
 import { ensureTaskDirectoryExists } from "@core/storage/disk"
 import { StateManager } from "@core/storage/StateManager"
@@ -209,15 +209,21 @@ export class SummarizeTaskHandler implements IToolHandler, IPartialBlockHandler 
 					fileContents
 			}
 
-			// Build the tool result with all components
-			let toolResultContent = continuationPrompt(context) + fileContents
+			let condensedContextHandoff = buildCondensedContextHandoff(context, "auto") + fileContents
 
 			// Append hook's context modification if provided
 			if (hookContextModification) {
-				toolResultContent += `\n\n[Context Modification from PreCompact Hook]\n${hookContextModification}`
+				condensedContextHandoff += `\n\n[Context Modification from PreCompact Hook]\n${hookContextModification}`
 			}
 
-			const toolResult = formatResponse.toolResult(toolResultContent)
+			config.taskState.userMessageContent.push({
+				type: "text",
+				text: condensedContextHandoff,
+			})
+
+			const toolResult = formatResponse.toolResult(
+				"The condensed context summary has been reloaded into this message as authoritative context for the truncated conversation history. Continue directly from it.",
+			)
 
 			// Handle context management
 			const apiConversationHistory = config.messageState.getApiConversationHistory()
