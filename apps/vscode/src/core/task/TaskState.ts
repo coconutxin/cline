@@ -59,6 +59,7 @@ export class TaskState {
 
 	// Retry tracking for auto-retry feature
 	autoRetryAttempts = 0
+	mistakeLimitAutoRetryAttempts = 0
 
 	// Task Initialization
 	isInitialized = false

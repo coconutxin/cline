@@ -21,6 +21,36 @@ const customPackageFields = {
 	publisher: "coconut",
 }
 
+const officialExtensionIdentity = {
+	name: "claude-dev",
+	publisher: "saoudrizwan",
+}
+
+function getExtensionId(pkg) {
+	return `${pkg.publisher}.${pkg.name}`
+}
+
+function validateCustomExtensionIdentity(pkg) {
+	const extensionId = getExtensionId(pkg)
+	const expectedExtensionId = getExtensionId(customPackageFields)
+	const officialExtensionId = getExtensionId(officialExtensionIdentity)
+
+	if (extensionId !== expectedExtensionId || pkg.displayName !== customPackageFields.displayName) {
+		throw new Error(
+			`Refusing to package unexpected VS Code extension identity.\n` +
+				`Expected: ${expectedExtensionId} (${customPackageFields.displayName})\n` +
+				`Actual:   ${extensionId} (${pkg.displayName ?? "<missing displayName>"})`,
+		)
+	}
+
+	if (extensionId === officialExtensionId) {
+		throw new Error(
+			`Refusing to package official extension identity '${officialExtensionId}'. ` +
+				"A VSIX with the official ID can be auto-updated by VS Code from the Marketplace.",
+		)
+	}
+}
+
 function commandName(name) {
 	return process.platform === "win32" ? `${name}.cmd` : name
 }
@@ -249,6 +279,9 @@ async function createStagingPackage(originalPackage) {
 			...(originalPackage.scripts ?? {}),
 		},
 	}
+
+	validateCustomExtensionIdentity(stagedPackage)
+	console.log(`Staged extension ID: ${getExtensionId(stagedPackage)}`)
 
 	// The original source tree has already been built. Do not run prepublish again inside staging.
 	delete stagedPackage.scripts["vscode:prepublish"]

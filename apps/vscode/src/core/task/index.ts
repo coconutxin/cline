@@ -2379,7 +2379,16 @@ export class Task {
 			mode: mode,
 		}
 
-		if (this.taskState.consecutiveMistakeCount >= this.stateManager.getGlobalSettingsKey("maxConsecutiveMistakes")) {
+		const maxConsecutiveMistakes = this.stateManager.getGlobalSettingsKey("maxConsecutiveMistakes")
+		if (this.taskState.consecutiveMistakeCount >= maxConsecutiveMistakes) {
+			const mistakeLimitMessage = `This may indicate a failure in Cline's thought process or inability to use a tool properly, which can be mitigated with some user guidance (e.g. "Try breaking down the task into smaller steps").`
+			const resetMistakeLimitState = () => {
+				this.taskState.consecutiveMistakeCount = 0
+				this.taskState.consecutiveIdenticalToolCount = 0
+				this.taskState.lastToolName = ""
+				this.taskState.lastToolParams = ""
+			}
+
 			// In yolo mode, don't wait for user input - fail the task
 			if (this.stateManager.getGlobalSettingsKey("yoloModeToggled")) {
 				const errorMessage =
@@ -2390,53 +2399,79 @@ export class Task {
 				return true // didEndLoop = true, signals task completion/failure
 			}
 
-			const autoApprovalSettings = this.stateManager.getGlobalSettingsKey("autoApprovalSettings")
-			if (autoApprovalSettings.enableNotifications) {
-				showSystemNotification({
-					subtitle: "Error",
-					message: "Cline is having trouble. Would you like to continue the task?",
-				})
-			}
-			const { response, text, images, files } = await this.ask(
-				"mistake_limit_reached",
-				this.api.getModel().id.includes("claude")
-					? `This may indicate a failure in Cline's thought process or inability to use a tool properly, which can be mitigated with some user guidance (e.g. "Try breaking down the task into smaller steps").`
-					: "Cline uses complex prompts and iterative task execution that may be challenging for less capable models. For best results, it's recommended to use Claude 4.5 Sonnet for its advanced agentic coding capabilities.",
-			)
-			if (response === "messageResponse") {
-				// Display the user's message in the chat UI
-				await this.say("user_feedback", text, images, files)
+			if (this.taskState.mistakeLimitAutoRetryAttempts < 3) {
+				this.taskState.mistakeLimitAutoRetryAttempts++
 
-				// This userContent is for the *next* API call.
-				const feedbackUserContent: ClineUserContent[] = []
-				feedbackUserContent.push({
-					type: "text",
-					text: formatResponse.tooManyMistakes(text),
-				})
-				if (images && images.length > 0) {
-					feedbackUserContent.push(...formatResponse.imageBlocks(images))
-				}
+				// Calculate delay: 2s, 4s, 8s
+				const delay = 2000 * 2 ** (this.taskState.mistakeLimitAutoRetryAttempts - 1)
+				const errorMessage =
+					`Cline reached the consecutive mistake limit ` +
+					`(${this.taskState.consecutiveMistakeCount}/${maxConsecutiveMistakes}). Retrying automatically.`
 
-				let fileContentString = ""
-				if (files && files.length > 0) {
-					fileContentString = await processFilesIntoText(files)
-				}
+				await this.say(
+					"error_retry",
+					JSON.stringify({
+						attempt: this.taskState.mistakeLimitAutoRetryAttempts,
+						maxAttempts: 3,
+						delaySeconds: delay / 1000,
+						errorMessage,
+					}),
+				)
 
-				if (fileContentString) {
-					feedbackUserContent.push({
-						type: "text",
-						text: fileContentString,
+				resetMistakeLimitState()
+				await setTimeoutPromise(delay)
+			} else {
+				await this.say(
+					"error_retry",
+					JSON.stringify({
+						attempt: 3,
+						maxAttempts: 3,
+						delaySeconds: 0,
+						failed: true,
+						errorMessage: mistakeLimitMessage,
+					}),
+				)
+
+				const autoApprovalSettings = this.stateManager.getGlobalSettingsKey("autoApprovalSettings")
+				if (autoApprovalSettings.enableNotifications) {
+					showSystemNotification({
+						subtitle: "Error",
+						message: "Cline is having trouble. Would you like to continue the task?",
 					})
 				}
+				const { response, text, images, files } = await this.ask("mistake_limit_reached", mistakeLimitMessage)
+				if (response === "messageResponse") {
+					// Display the user's message in the chat UI
+					await this.say("user_feedback", text, images, files)
 
-				userContent = feedbackUserContent
+					// This userContent is for the *next* API call.
+					const feedbackUserContent: ClineUserContent[] = []
+					feedbackUserContent.push({
+						type: "text",
+						text: formatResponse.tooManyMistakes(text),
+					})
+					if (images && images.length > 0) {
+						feedbackUserContent.push(...formatResponse.imageBlocks(images))
+					}
+
+					let fileContentString = ""
+					if (files && files.length > 0) {
+						fileContentString = await processFilesIntoText(files)
+					}
+
+					if (fileContentString) {
+						feedbackUserContent.push({
+							type: "text",
+							text: fileContentString,
+						})
+					}
+
+					userContent = feedbackUserContent
+				}
+				this.taskState.mistakeLimitAutoRetryAttempts = 0
+				this.taskState.autoRetryAttempts = 0
+				resetMistakeLimitState()
 			}
-			this.taskState.consecutiveMistakeCount = 0
-			this.taskState.autoRetryAttempts = 0 // need to reset this if the user chooses to manually retry after the mistake limit is reached
-			// Reset loop detection state so it can re-arm if the model continues looping
-			this.taskState.consecutiveIdenticalToolCount = 0
-			this.taskState.lastToolName = ""
-			this.taskState.lastToolParams = ""
 		}
 
 		// get previous api req's index to check token usage and determine if we need to truncate conversation history
@@ -3214,6 +3249,8 @@ export class Task {
 						text: formatResponse.noToolsUsed(this.useNativeToolCalls),
 					})
 					this.taskState.consecutiveMistakeCount++
+				} else if (this.taskState.consecutiveMistakeCount === 0) {
+					this.taskState.mistakeLimitAutoRetryAttempts = 0
 				}
 
 				// Reset auto-retry counter for each new API request
