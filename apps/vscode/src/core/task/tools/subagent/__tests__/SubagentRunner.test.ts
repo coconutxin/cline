@@ -60,6 +60,7 @@ function createTaskConfig(
 		localSkillsToggles?: Record<string, boolean>
 		remoteSkillsToggles?: Record<string, boolean>
 		remoteGlobalSkills?: GlobalInstructionsFile[]
+		useAutoCondense?: boolean
 	} = {},
 ): TaskConfig {
 	return {
@@ -92,6 +93,9 @@ function createTaskConfig(
 				getGlobalSettingsKey: (key: string) => {
 					if (key === "mode") {
 						return "act"
+					}
+					if (key === "useAutoCondense") {
+						return options.useAutoCondense
 					}
 					if (key === "customPrompt") {
 						return undefined

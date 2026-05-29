@@ -491,5 +491,23 @@ describe("ContextManager", () => {
 			const result = contextManager.shouldCompactContextWindow(clineMessages, api, 0, 1.0)
 			expect(result).to.equal(true)
 		})
+
+		it("uses a 10% buffer for 500K contexts in the default branch", () => {
+			const api = createMockApi(500_000)
+			// New default branch should compact at 450K (10% buffer), not 460K (fixed 40K buffer)
+			const clineMessages: ClineMessage[] = [createApiReqMessage({ tokensIn: 450_000, tokensOut: 5_000 })]
+
+			const result = contextManager.shouldCompactContextWindow(clineMessages, api, 0, undefined)
+			expect(result).to.equal(true)
+		})
+
+		it("uses a 10% buffer for 1000K contexts in the default branch", () => {
+			const api = createMockApi(1_000_000)
+			// New default branch should compact at 900K (10% buffer), not 960K (fixed 40K buffer)
+			const clineMessages: ClineMessage[] = [createApiReqMessage({ tokensIn: 900_000, tokensOut: 5_000 })]
+
+			const result = contextManager.shouldCompactContextWindow(clineMessages, api, 0, undefined)
+			expect(result).to.equal(true)
+		})
 	})
 })

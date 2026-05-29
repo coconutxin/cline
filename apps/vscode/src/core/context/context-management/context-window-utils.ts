@@ -28,7 +28,7 @@ export function getContextWindowInfo(api: ApiHandler) {
 			maxAllowedSize = contextWindow - 40_000
 			break
 		default:
-			maxAllowedSize = Math.max(contextWindow - 40_000, contextWindow * 0.8) // for deepseek, 80% of 64k meant only ~10k buffer which was too small and resulted in users getting context window errors.
+			maxAllowedSize = Math.min(contextWindow - 40_000, Math.floor(contextWindow * 0.9)) // for larger windows, keep at least a 40K or 10% buffer (whichever is greater) before auto-compacting.
 	}
 
 	return { contextWindow, maxAllowedSize }
