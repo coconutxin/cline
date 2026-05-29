@@ -2217,7 +2217,7 @@ export const openAiCodexDefaultModelId: OpenAiCodexModelId = "gpt-5.3-codex"
 export const openAiCodexModels = {
 	"gpt-5.5": {
 		maxTokens: 128_000,
-		contextWindow: 500_000,
+		contextWindow: 512_000,
 		supportsImages: true,
 		supportsPromptCache: true,
 		supportsReasoning: true,
