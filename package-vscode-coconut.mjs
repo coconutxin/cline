@@ -11,6 +11,9 @@ const vscodeDir = path.join(rootDir, "apps", "vscode")
 const webviewDir = path.join(vscodeDir, "webview-ui")
 const outputDir = path.join(rootDir, "output")
 const stagingDir = path.join(os.tmpdir(), `cline-coconut-vscode-${process.pid}-${Date.now()}`)
+const upstreamRemoteName = "upstream"
+const upstreamRemoteUrl = "https://github.com/cline/cline.git"
+const syncBranch = "main"
 
 const customPackageFields = {
 	name: "cline-coconut",
@@ -69,6 +72,109 @@ async function run(command, args, options = {}) {
 			reject(new Error(`${command} exited with ${code ?? signal}`))
 		})
 	})
+}
+
+async function capture(command, args, options = {}) {
+	const result = await new Promise((resolve, reject) => {
+		const child = spawn(command, args, {
+			stdio: ["ignore", "pipe", "pipe"],
+			shell: process.platform === "win32" && /\.(cmd|bat)$/i.test(command),
+			...options,
+		})
+
+		let stdout = ""
+		let stderr = ""
+
+		child.stdout?.on("data", (data) => {
+			stdout += data.toString()
+		})
+
+		child.stderr?.on("data", (data) => {
+			stderr += data.toString()
+		})
+
+		child.on("error", reject)
+		child.on("exit", (code, signal) => {
+			resolve({ code, signal, stdout, stderr })
+		})
+	})
+
+	if (result.code !== 0) {
+		throw new Error(
+			`${command} ${args.join(" ")} exited with ${result.code ?? result.signal}\n${result.stderr}${result.stdout}`,
+		)
+	}
+
+	return result.stdout.trim()
+}
+
+async function getRemoteUrl(remoteName) {
+	const result = await new Promise((resolve, reject) => {
+		const child = spawn("git", ["remote", "get-url", remoteName], {
+			cwd: rootDir,
+			stdio: ["ignore", "pipe", "pipe"],
+		})
+
+		let stdout = ""
+		let stderr = ""
+
+		child.stdout?.on("data", (data) => {
+			stdout += data.toString()
+		})
+
+		child.stderr?.on("data", (data) => {
+			stderr += data.toString()
+		})
+
+		child.on("error", reject)
+		child.on("exit", (code) => {
+			resolve({ code, stdout: stdout.trim(), stderr: stderr.trim() })
+		})
+	})
+
+	if (result.code !== 0) {
+		return undefined
+	}
+
+	return result.stdout
+}
+
+async function ensureCleanWorktree(reason) {
+	const status = await capture("git", ["status", "--porcelain"], { cwd: rootDir })
+
+	if (status) {
+		throw new Error(
+			`Git working tree is not clean before ${reason}. Commit or stash changes first.\n\n${status}`,
+		)
+	}
+}
+
+async function syncOfficialChanges() {
+	console.log("Syncing official Cline repository before packaging")
+
+	await capture("git", ["rev-parse", "--is-inside-work-tree"], { cwd: rootDir })
+	await ensureCleanWorktree("syncing upstream")
+
+	const currentBranch = await capture("git", ["branch", "--show-current"], { cwd: rootDir })
+	if (currentBranch !== syncBranch) {
+		throw new Error(`Expected to run on branch '${syncBranch}', but current branch is '${currentBranch}'.`)
+	}
+
+	const upstreamUrl = await getRemoteUrl(upstreamRemoteName)
+	if (!upstreamUrl) {
+		await run("git", ["remote", "add", upstreamRemoteName, upstreamRemoteUrl], { cwd: rootDir })
+	} else if (upstreamUrl !== upstreamRemoteUrl) {
+		await run("git", ["remote", "set-url", upstreamRemoteName, upstreamRemoteUrl], { cwd: rootDir })
+	}
+
+	await run("git", ["fetch", "origin"], { cwd: rootDir })
+	await run("git", ["fetch", upstreamRemoteName], { cwd: rootDir })
+	await run("git", ["pull", "--ff-only", "origin", syncBranch], { cwd: rootDir })
+	await run("git", ["merge", `${upstreamRemoteName}/${syncBranch}`], { cwd: rootDir })
+	await run("git", ["push", "origin", syncBranch], { cwd: rootDir })
+
+	await ensureCleanWorktree("packaging after upstream sync")
+	console.log("Official repository sync completed and pushed to fork.")
 }
 
 async function installIfMissing(env) {
@@ -152,17 +258,21 @@ async function createStagingPackage(originalPackage) {
 
 async function main() {
 	const packagePath = path.join(vscodeDir, "package.json")
-	const originalPackage = JSON.parse(await readFile(packagePath, "utf8"))
-	const outputFile = path.join(outputDir, `${customPackageFields.name}-${originalPackage.version}.vsix`)
 	const env = createBuildEnv()
 
 	console.log("Packaging VS Code extension with staging metadata override")
 	console.log(`Source package: ${packagePath}`)
 	console.log(`Staging dir:    ${stagingDir}`)
-	console.log(`Output file:    ${outputFile}`)
-	console.log(`Version:        ${originalPackage.version} (from source package.json)`)
 
 	try {
+		await syncOfficialChanges()
+
+		const originalPackage = JSON.parse(await readFile(packagePath, "utf8"))
+		const outputFile = path.join(outputDir, `${customPackageFields.name}-${originalPackage.version}.vsix`)
+
+		console.log(`Output file:    ${outputFile}`)
+		console.log(`Version:        ${originalPackage.version} (from source package.json after upstream sync)`)
+
 		await mkdir(outputDir, { recursive: true })
 		await installIfMissing(env)
 
