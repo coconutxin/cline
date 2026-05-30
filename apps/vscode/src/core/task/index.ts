@@ -2386,6 +2386,10 @@ export class Task {
 
 		const maxConsecutiveMistakes = this.stateManager.getGlobalSettingsKey("maxConsecutiveMistakes")
 		if (this.taskState.consecutiveMistakeCount >= maxConsecutiveMistakes) {
+			const displayedConsecutiveMistakeCount = Math.min(
+				this.taskState.consecutiveMistakeCount,
+				maxConsecutiveMistakes,
+			)
 			const mistakeLimitMessage = `This may indicate a failure in Cline's thought process or inability to use a tool properly, which can be mitigated with some user guidance (e.g. "Try breaking down the task into smaller steps").`
 			const resetMistakeLimitState = () => {
 				this.taskState.consecutiveMistakeCount = 0
@@ -2411,7 +2415,7 @@ export class Task {
 				const delay = 2000 * 2 ** (this.taskState.mistakeLimitAutoRetryAttempts - 1)
 				const errorMessage =
 					`Cline reached the consecutive mistake limit ` +
-					`(${this.taskState.consecutiveMistakeCount}/${maxConsecutiveMistakes}). Retrying automatically.`
+					`(${displayedConsecutiveMistakeCount}/${maxConsecutiveMistakes}). Retrying automatically.`
 
 				await this.say(
 					"error_retry",
