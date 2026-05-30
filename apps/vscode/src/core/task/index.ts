@@ -1595,28 +1595,12 @@ export class Task {
 						model: getHookModelContext(this.api, this.stateManager),
 					})
 
-					// TaskCancel completed successfully
-					// Present resume button after successful TaskCancel hook
-					const lastClineMessage = this.messageStateHandler
-						.getClineMessages()
-						.slice()
-						.reverse()
-						.find((m) => !(m.ask === "resume_task" || m.ask === "resume_completed_task"))
-
-					let askType: ClineAsk
-					if (lastClineMessage?.ask === "completion_result") {
-						askType = "resume_completed_task"
-					} else {
-						askType = "resume_task"
-					}
-
-					// Present the resume ask - this will show the resume button in the UI
-					// We don't await this because we want to set the abort flag immediately
-					// The ask will be waiting when the user decides to resume
-					this.ask(askType).catch((error) => {
-						// If ask fails (e.g., task was cleared), that's okay - just log it
-						Logger.log("[TaskCancel] Resume ask failed (task may have been cleared):", error)
-					})
+					// TaskCancel completed successfully. Do not present a resume ask from this
+					// aborted Task instance: Controller.cancelTask() will reinitialize the
+					// task from history, and resumeTaskFromHistory() will present the real
+					// resume ask whose response continues the task loop. Creating a
+					// fire-and-forget ask here can race with that reinitialization and
+					// swallow user input without sending it to the model.
 				} catch (error) {
 					// TaskCancel hook failed - non-fatal, just log
 					Logger.error("[TaskCancel Hook] Failed (non-fatal):", error)
