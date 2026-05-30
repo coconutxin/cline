@@ -18,6 +18,12 @@ This file is the secret sauce for working effectively in this codebase. It captu
 - When adding new feature flags, see this PR as a reference https://github.com/cline/cline/pull/7566
 - Additional instructions about making requests: @.clinerules/network.md
 
+## CLI / Terminal
+- Avoid commands that may open an interactive pager and block automation at a `:` prompt. Prefer non-interactive output:
+  - Use `git --no-pager ...` for `git diff`, `git log`, `git show`, etc.
+  - Prefer tool-specific pager disables such as `GH_PAGER=cat`, `AWS_PAGER=`, or equivalent.
+  - Prefer non-interactive flags like `--yes`, `--force`, `--no-interactive`, and `CI=1` when safe.
+
 ## gRPC/Protobuf Communication
 The extension and webview communicate via gRPC-like protocol over VS Code message passing.
 
