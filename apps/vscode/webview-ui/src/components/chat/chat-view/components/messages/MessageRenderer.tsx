@@ -2,6 +2,7 @@ import type { ClineMessage } from "@shared/ExtensionMessage"
 import type React from "react"
 import { useMemo } from "react"
 import BrowserSessionRow from "@/components/chat/BrowserSessionRow"
+import ChatErrorBoundary from "@/components/chat/ChatErrorBoundary"
 import ChatRow from "@/components/chat/ChatRow"
 import { useExtensionState } from "@/context/ExtensionStateContext"
 import { cn } from "@/lib/utils"
@@ -78,22 +79,27 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
 	}, [messageOrGroup, groupedMessages, index])
 
 	if (isToolGroup(messageOrGroup)) {
-		return <ToolGroupRenderer allMessages={modifiedMessages} isLastGroup={isLastToolGroup} messages={messageOrGroup} />
+		return (
+			<ChatErrorBoundary errorTitle="Unable to render this tool group" key={`tool-group-${messageOrGroup[0]?.ts}`}>
+				<ToolGroupRenderer allMessages={modifiedMessages} isLastGroup={isLastToolGroup} messages={messageOrGroup} />
+			</ChatErrorBoundary>
+		)
 	}
 
 	// Browser session group
 	if (Array.isArray(messageOrGroup)) {
 		return (
-			<BrowserSessionRow
-				expandedRows={expandedRows}
-				isLast={isLastMessage}
-				key={messageOrGroup[0]?.ts}
-				lastModifiedMessage={modifiedMessages.at(-1)}
-				messages={messageOrGroup}
-				onHeightChange={onHeightChange}
-				onSetQuote={onSetQuote}
-				onToggleExpand={onToggleExpand}
-			/>
+			<ChatErrorBoundary errorTitle="Unable to render this browser session" key={`browser-${messageOrGroup[0]?.ts}`}>
+				<BrowserSessionRow
+					expandedRows={expandedRows}
+					isLast={isLastMessage}
+					lastModifiedMessage={modifiedMessages.at(-1)}
+					messages={messageOrGroup}
+					onHeightChange={onHeightChange}
+					onSetQuote={onSetQuote}
+					onToggleExpand={onToggleExpand}
+				/>
+			</ChatErrorBoundary>
 		)
 	}
 
@@ -104,23 +110,24 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({
 				"pb-2.5": isLastMessage && !footerActive,
 			})}
 			data-message-ts={messageOrGroup.ts}>
-			<ChatRow
-				inputValue={inputValue}
-				isExpanded={expandedRows[messageOrGroup.ts] || false}
-				isLast={isLastMessage}
-				isRequestInProgress={isRequestInProgress}
-				key={messageOrGroup.ts}
-				lastModifiedMessage={modifiedMessages.at(-1)}
-				message={messageOrGroup}
-				mode={mode}
-				onCancelCommand={() => messageHandlers.executeButtonAction("cancel")}
-				onHeightChange={onHeightChange}
-				onSetQuote={onSetQuote}
-				onToggleExpand={onToggleExpand}
-				reasoningContent={reasoningData.reasoning}
-				responseStarted={reasoningData.responseStarted}
-				sendMessageFromChatRow={messageHandlers.handleSendMessage}
-			/>
+			<ChatErrorBoundary errorTitle="Unable to render this message" key={`message-${messageOrGroup.ts}`}>
+				<ChatRow
+					inputValue={inputValue}
+					isExpanded={expandedRows[messageOrGroup.ts] || false}
+					isLast={isLastMessage}
+					isRequestInProgress={isRequestInProgress}
+					lastModifiedMessage={modifiedMessages.at(-1)}
+					message={messageOrGroup}
+					mode={mode}
+					onCancelCommand={() => messageHandlers.executeButtonAction("cancel")}
+					onHeightChange={onHeightChange}
+					onSetQuote={onSetQuote}
+					onToggleExpand={onToggleExpand}
+					reasoningContent={reasoningData.reasoning}
+					responseStarted={reasoningData.responseStarted}
+					sendMessageFromChatRow={messageHandlers.handleSendMessage}
+				/>
+			</ChatErrorBoundary>
 		</div>
 	)
 }

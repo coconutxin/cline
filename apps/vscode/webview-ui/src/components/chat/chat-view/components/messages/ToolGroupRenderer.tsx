@@ -6,6 +6,7 @@ import { cleanPathPrefix } from "@/components/common/CodeAccordian"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { FileServiceClient } from "@/services/grpc-client"
+import { safeJsonParse } from "@/utils/safeJsonParse"
 import { getIconByToolName, getToolsNotInCurrentActivities, isLowStakesTool } from "../../utils/messageUtils"
 
 interface ToolGroupRendererProps {
@@ -67,15 +68,11 @@ const getCurrentActivities = (allMessages: ClineMessage[]): ClineMessage[] => {
 	for (let i = allMessages.length - 1; i >= 0; i--) {
 		const msg = allMessages[i]
 		if (msg.say === "api_req_started" && msg.text) {
-			try {
-				const info = JSON.parse(msg.text)
-				const hasCost = info.cost != null
-				if (!hasCost) {
-					currentApiReqIndex = i
-					break
-				}
-			} catch {
-				// ignore
+			const info = safeJsonParse<{ cost?: number | null }>(msg.text, {}, "tool group api_req_started")
+			const hasCost = info.cost != null
+			if (!hasCost) {
+				currentApiReqIndex = i
+				break
 			}
 		}
 	}
@@ -283,11 +280,7 @@ export function buildToolsWithReasoning(messages: ClineMessage[]): ToolWithReaso
  * Safely parse tool JSON, returning empty tool on failure.
  */
 function parseToolSafe(text: string | undefined): ClineSayTool {
-	try {
-		return JSON.parse(text || "{}") as ClineSayTool
-	} catch {
-		return {} as ClineSayTool
-	}
+	return safeJsonParse<ClineSayTool>(text, {} as ClineSayTool, "tool group tool")
 }
 
 /**

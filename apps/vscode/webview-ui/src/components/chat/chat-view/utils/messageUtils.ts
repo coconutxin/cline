@@ -6,6 +6,7 @@ import { combineApiRequests } from "@shared/combineApiRequests"
 import { combineCommandSequences } from "@shared/combineCommandSequences"
 import type { ClineMessage, ClineSayBrowserAction, ClineSayTool } from "@shared/ExtensionMessage"
 import { FileIcon, FolderOpenDotIcon, FolderOpenIcon, SearchIcon, ShapesIcon, WrenchIcon } from "lucide-react"
+import { safeJsonParse } from "@/utils/safeJsonParse"
 
 /**
  * Low-stakes tool types that should be grouped together
@@ -25,12 +26,8 @@ export function isLowStakesTool(message: ClineMessage): boolean {
 	if (message.say !== "tool" && message.ask !== "tool") {
 		return false
 	}
-	try {
-		const tool = JSON.parse(message.text || "{}") as ClineSayTool
-		return LOW_STAKES_TOOLS.has(tool.tool)
-	} catch {
-		return false
-	}
+	const tool = safeJsonParse<ClineSayTool | null>(message.text, null)
+	return tool ? LOW_STAKES_TOOLS.has(tool.tool) : false
 }
 
 /**
@@ -81,13 +78,16 @@ export function filterVisibleMessages(messages: ClineMessage[]): ClineMessage[] 
 				// api_req_started rows only render visible content for errors/cancels.
 				// Reasoning has its own standalone ChatRows. Everything else renders
 				// as invisible padding. Filter out unless there's an error.
-				try {
-					const info = JSON.parse(message.text || "{}")
-					if (info.cancelReason || info.streamingFailedMessage) {
-						break // keep - has error content
-					}
-				} catch {
+				const info = safeJsonParse<{ cancelReason?: unknown; streamingFailedMessage?: unknown } | null>(
+					message.text,
+					null,
+					"visible api_req_started",
+				)
+				if (!info) {
 					break // keep on parse error to be safe
+				}
+				if (info.cancelReason || info.streamingFailedMessage) {
+					break // keep - has error content
 				}
 				return false
 			}
@@ -160,7 +160,11 @@ export function groupMessages(visibleMessages: ClineMessage[]): (ClineMessage | 
 				// get last api_req_started in currentGroup to check if it's cancelled
 				const lastApiReqStarted = [...currentGroup].reverse().find((m) => m.say === "api_req_started")
 				if (lastApiReqStarted?.text != null) {
-					const info = JSON.parse(lastApiReqStarted.text)
+					const info = safeJsonParse<{ cancelReason?: unknown }>(
+						lastApiReqStarted.text,
+						{},
+						"browser session api_req_started",
+					)
 					const isCancelled = info.cancelReason != null
 					if (isCancelled) {
 						endBrowserSession()
@@ -175,7 +179,11 @@ export function groupMessages(visibleMessages: ClineMessage[]): (ClineMessage | 
 
 				// Check if this is a close action
 				if (message.say === "browser_action") {
-					const browserAction = JSON.parse(message.text || "{}") as ClineSayBrowserAction
+					const browserAction = safeJsonParse<ClineSayBrowserAction>(
+						message.text,
+						{} as ClineSayBrowserAction,
+						"browser action grouping",
+					)
 					if (browserAction.action === "close") {
 						endBrowserSession()
 					}
@@ -269,14 +277,13 @@ export function findApiReqInfoForCheckpoint(
 	for (let i = checkpointIndex - 1; i >= 0; i--) {
 		const msg = allMessages[i]
 		if (msg.say === "api_req_started" && msg.text) {
-			try {
-				const info = JSON.parse(msg.text)
-				return {
-					cost: info.cost,
-					request: info.request,
-				}
-			} catch {
+			const info = safeJsonParse<{ cost?: number; request?: string } | null>(msg.text, null, "checkpoint api_req_started")
+			if (!info) {
 				return { cost: undefined, request: undefined }
+			}
+			return {
+				cost: info.cost,
+				request: info.request,
 			}
 		}
 	}
@@ -311,13 +318,9 @@ function isDisplayedCheckpoint(checkpointIndex: number, allMessages: ClineMessag
 
 		// If preceded by a low-stakes tool, this checkpoint is in the tool group (absorbed)
 		if (msg.say === "tool" || msg.ask === "tool") {
-			try {
-				const tool = JSON.parse(msg.text || "{}") as ClineSayTool
-				if (LOW_STAKES_TOOLS.has(tool.tool)) {
-					return false // absorbed into tool group
-				}
-			} catch {
-				// Can't parse, treat as displayed
+			const tool = safeJsonParse<ClineSayTool | null>(msg.text, null, "checkpoint tool")
+			if (tool && LOW_STAKES_TOOLS.has(tool.tool)) {
+				return false // absorbed into tool group
 			}
 		}
 
@@ -360,13 +363,9 @@ export function findNextSegmentCost(checkpointTs: number, allMessages: ClineMess
 	for (let i = checkpointIndex + 1; i < endIndex; i++) {
 		const msg = allMessages[i]
 		if (msg.say === "api_req_started" && msg.text) {
-			try {
-				const info = JSON.parse(msg.text)
-				if (typeof info.cost === "number") {
-					totalCost += info.cost
-				}
-			} catch {
-				// ignore parse errors
+			const info = safeJsonParse<{ cost?: unknown }>(msg.text, {}, "segment api_req_started")
+			if (typeof info.cost === "number") {
+				totalCost += info.cost
 			}
 		}
 	}
@@ -389,13 +388,12 @@ export function isTextMessagePendingToolCall(textTs: number, allMessages: ClineM
 	for (let i = textIndex - 1; i >= 0; i--) {
 		const msg = allMessages[i]
 		if (msg.say === "api_req_started" && msg.text) {
-			try {
-				const info = JSON.parse(msg.text)
-				// If no cost, the request is still in progress
-				return info.cost == null
-			} catch {
+			const info = safeJsonParse<{ cost?: number | null } | null>(msg.text, null, "pending text api_req_started")
+			if (!info) {
 				return false
 			}
+			// If no cost, the request is still in progress
+			return info.cost == null
 		}
 	}
 	return false
@@ -435,13 +433,15 @@ export function isToolGroupInFlight(toolGroupMessages: ClineMessage[], allMessag
 	}
 
 	// Step 2: Determine if most recent api_req is complete (has cost) or incomplete (no cost)
-	let mostRecentHasCost = false
-	try {
-		const info = JSON.parse(mostRecentApiReq.text)
-		mostRecentHasCost = info.cost != null
-	} catch {
+	const mostRecentInfo = safeJsonParse<{ cost?: number | null } | null>(
+		mostRecentApiReq.text,
+		null,
+		"tool group in-flight api_req_started",
+	)
+	if (!mostRecentInfo) {
 		return false
 	}
+	const mostRecentHasCost = mostRecentInfo.cost != null
 
 	// Find the last tool in this group
 	const lastTool = [...toolGroupMessages].reverse().find((m) => isLowStakesTool(m))
@@ -464,14 +464,10 @@ export function isToolGroupInFlight(toolGroupMessages: ClineMessage[], allMessag
 		for (let i = mostRecentApiReqIndex - 1; i >= 0; i--) {
 			const msg = allMessages[i]
 			if (msg.say === "api_req_started" && msg.text) {
-				try {
-					const prevInfo = JSON.parse(msg.text)
-					if (prevInfo.cost != null) {
-						prevCompletedApiReqIndex = i
-						break
-					}
-				} catch {
-					/* continue searching */
+				const prevInfo = safeJsonParse<{ cost?: number | null }>(msg.text, {}, "previous completed api_req_started")
+				if (prevInfo.cost != null) {
+					prevCompletedApiReqIndex = i
+					break
 				}
 			}
 		}
@@ -528,13 +524,15 @@ export function getToolsNotInCurrentActivities(toolGroupMessages: ClineMessage[]
 	}
 
 	// Step 2: Determine if most recent api_req is complete (has cost) or incomplete (no cost)
-	let mostRecentHasCost = false
-	try {
-		const info = JSON.parse(mostRecentApiReq.text)
-		mostRecentHasCost = info.cost != null
-	} catch {
+	const mostRecentInfo = safeJsonParse<{ cost?: number | null } | null>(
+		mostRecentApiReq.text,
+		null,
+		"current activities api_req_started",
+	)
+	if (!mostRecentInfo) {
 		return toolGroupMessages
 	}
+	const mostRecentHasCost = mostRecentInfo.cost != null
 
 	// Step 3: Determine which tools are "in current activities"
 	if (!mostRecentHasCost) {
@@ -546,14 +544,10 @@ export function getToolsNotInCurrentActivities(toolGroupMessages: ClineMessage[]
 		for (let i = mostRecentApiReqIndex - 1; i >= 0; i--) {
 			const msg = allMessages[i]
 			if (msg.say === "api_req_started" && msg.text) {
-				try {
-					const prevInfo = JSON.parse(msg.text)
-					if (prevInfo.cost != null) {
-						prevCompletedApiReqIndex = i
-						break
-					}
-				} catch {
-					/* continue searching */
+				const prevInfo = safeJsonParse<{ cost?: number | null }>(msg.text, {}, "current activities previous api_req")
+				if (prevInfo.cost != null) {
+					prevCompletedApiReqIndex = i
+					break
 				}
 			}
 		}

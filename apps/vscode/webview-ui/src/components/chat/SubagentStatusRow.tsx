@@ -16,6 +16,7 @@ import {
 	NetworkIcon,
 } from "lucide-react"
 import { useEffect, useMemo, useRef, useState } from "react"
+import { safeJsonParse } from "@/utils/safeJsonParse"
 import MarkdownBlock from "../common/MarkdownBlock"
 
 interface SubagentStatusRowProps {
@@ -77,45 +78,41 @@ function parseSubagentRowData(message: ClineMessage): SubagentRowData | null {
 		return null
 	}
 
-	try {
-		if (message.ask === "use_subagents" || message.say === "use_subagents") {
-			const parsed = JSON.parse(message.text) as ClineAskUseSubagents
-			if (!Array.isArray(parsed.prompts)) {
-				return null
-			}
-			const prompts = parsed.prompts.map((prompt) => prompt?.trim()).filter((prompt): prompt is string => !!prompt)
-			if (prompts.length === 0) {
-				return null
-			}
-
-			return {
-				status: "pending",
-				items: prompts.map((prompt, index) => ({
-					index: index + 1,
-					prompt,
-					status: "pending",
-					toolCalls: 0,
-					inputTokens: 0,
-					outputTokens: 0,
-					totalCost: 0,
-					contextTokens: 0,
-					contextWindow: 0,
-					contextUsagePercentage: 0,
-				})),
-			}
+	if (message.ask === "use_subagents" || message.say === "use_subagents") {
+		const parsed = safeJsonParse<ClineAskUseSubagents | null>(message.text, null, "use_subagents")
+		if (!parsed || !Array.isArray(parsed.prompts)) {
+			return null
 		}
-
-		const parsed = JSON.parse(message.text) as ClineSaySubagentStatus
-		if (!Array.isArray(parsed.items)) {
+		const prompts = parsed.prompts.map((prompt) => prompt?.trim()).filter((prompt): prompt is string => !!prompt)
+		if (prompts.length === 0) {
 			return null
 		}
 
 		return {
-			status: parsed.status,
-			items: parsed.items,
+			status: "pending",
+			items: prompts.map((prompt, index) => ({
+				index: index + 1,
+				prompt,
+				status: "pending",
+				toolCalls: 0,
+				inputTokens: 0,
+				outputTokens: 0,
+				totalCost: 0,
+				contextTokens: 0,
+				contextWindow: 0,
+				contextUsagePercentage: 0,
+			})),
 		}
-	} catch {
+	}
+
+	const parsed = safeJsonParse<ClineSaySubagentStatus | null>(message.text, null, "subagent status")
+	if (!parsed || !Array.isArray(parsed.items)) {
 		return null
+	}
+
+	return {
+		status: parsed.status,
+		items: parsed.items,
 	}
 }
 

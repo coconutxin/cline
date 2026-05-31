@@ -1,4 +1,5 @@
 import React from "react"
+import { safeJsonParse } from "@/utils/safeJsonParse"
 import MarkdownBlock from "../common/MarkdownBlock"
 
 interface ReportBugPreviewProps {
@@ -8,12 +9,7 @@ interface ReportBugPreviewProps {
 const ReportBugPreview: React.FC<ReportBugPreviewProps> = ({ data }) => {
 	// Parse the JSON data from the context string
 	const bugData = React.useMemo(() => {
-		try {
-			return JSON.parse(data || "{}")
-		} catch (e) {
-			console.error("Failed to parse bug report data", e)
-			return {}
-		}
+		return safeJsonParse<Record<string, string>>(data, {}, "bug report preview")
 	}, [data])
 
 	return (

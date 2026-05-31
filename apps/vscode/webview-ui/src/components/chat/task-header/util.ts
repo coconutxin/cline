@@ -1,4 +1,5 @@
 import { ClineMessage } from "@shared/ExtensionMessage"
+import { safeJsonParse } from "@/utils/safeJsonParse"
 import { COLOR_BEIGE, COLOR_BLUE, COLOR_DARK_GRAY, COLOR_GRAY, COLOR_GREEN, COLOR_PURPLE, COLOR_WHITE } from "../colors"
 
 /**
@@ -19,27 +20,23 @@ export const getColor = (message: ClineMessage): string => {
 				return COLOR_GRAY // Gray for assistant responses
 			case "tool":
 				if (message.text) {
-					try {
-						const toolData = JSON.parse(message.text)
-						if (
-							toolData.tool === "readFile" ||
-							toolData.tool === "listFilesTopLevel" ||
-							toolData.tool === "listFilesRecursive" ||
-							toolData.tool === "listCodeDefinitionNames" ||
-							toolData.tool === "searchFiles"
-						) {
-							return COLOR_BEIGE // Beige for file read operations
-						} else if (
-							toolData.tool === "editedExistingFile" ||
-							toolData.tool === "newFileCreated" ||
-							toolData.tool === "deletedFile"
-						) {
-							return COLOR_BLUE // Blue for file edit/create operations
-						} else if (toolData.tool === "webFetch" || toolData.tool === "webSearch") {
-							return COLOR_PURPLE // Purple for web fetch/search operations
-						}
-					} catch (_e) {
-						// JSON parse error here
+					const toolData = safeJsonParse<{ tool?: string }>(message.text, {}, "task header tool color")
+					if (
+						toolData.tool === "readFile" ||
+						toolData.tool === "listFilesTopLevel" ||
+						toolData.tool === "listFilesRecursive" ||
+						toolData.tool === "listCodeDefinitionNames" ||
+						toolData.tool === "searchFiles"
+					) {
+						return COLOR_BEIGE // Beige for file read operations
+					} else if (
+						toolData.tool === "editedExistingFile" ||
+						toolData.tool === "newFileCreated" ||
+						toolData.tool === "deletedFile"
+					) {
+						return COLOR_BLUE // Blue for file edit/create operations
+					} else if (toolData.tool === "webFetch" || toolData.tool === "webSearch") {
+						return COLOR_PURPLE // Purple for web fetch/search operations
 					}
 				}
 				return COLOR_BEIGE // Default beige for tool use
@@ -63,27 +60,23 @@ export const getColor = (message: ClineMessage): string => {
 			case "tool":
 				// Match the color of the tool approval with the tool type
 				if (message.text) {
-					try {
-						const toolData = JSON.parse(message.text)
-						if (
-							toolData.tool === "readFile" ||
-							toolData.tool === "listFilesTopLevel" ||
-							toolData.tool === "listFilesRecursive" ||
-							toolData.tool === "listCodeDefinitionNames" ||
-							toolData.tool === "searchFiles"
-						) {
-							return COLOR_BEIGE // Beige for file read operations
-						} else if (
-							toolData.tool === "editedExistingFile" ||
-							toolData.tool === "newFileCreated" ||
-							toolData.tool === "deletedFile"
-						) {
-							return COLOR_BLUE // Blue for file edit/create operations
-						} else if (toolData.tool === "webFetch" || toolData.tool === "webSearch") {
-							return COLOR_PURPLE // Purple for web fetch/search operations
-						}
-					} catch (_e) {
-						// JSON parse error here
+					const toolData = safeJsonParse<{ tool?: string }>(message.text, {}, "task header ask tool color")
+					if (
+						toolData.tool === "readFile" ||
+						toolData.tool === "listFilesTopLevel" ||
+						toolData.tool === "listFilesRecursive" ||
+						toolData.tool === "listCodeDefinitionNames" ||
+						toolData.tool === "searchFiles"
+					) {
+						return COLOR_BEIGE // Beige for file read operations
+					} else if (
+						toolData.tool === "editedExistingFile" ||
+						toolData.tool === "newFileCreated" ||
+						toolData.tool === "deletedFile"
+					) {
+						return COLOR_BLUE // Blue for file edit/create operations
+					} else if (toolData.tool === "webFetch" || toolData.tool === "webSearch") {
+						return COLOR_PURPLE // Purple for web fetch/search operations
 					}
 				}
 				return COLOR_BEIGE // Default beige for tool approvals

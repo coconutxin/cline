@@ -5,6 +5,7 @@ import { Virtuoso } from "react-virtuoso"
 import { StickyUserMessage } from "@/components/chat/task-header/StickyUserMessage"
 import { useExtensionState } from "@/context/ExtensionStateContext"
 import { cn } from "@/lib/utils"
+import { safeJsonParse } from "@/utils/safeJsonParse"
 import type { ChatState, MessageHandlers, ScrollBehavior } from "../../types/chatTypes"
 import { isToolGroup } from "../../utils/messageUtils"
 import { createMessageRenderer } from "../messages/MessageRenderer"
@@ -89,13 +90,9 @@ export const MessagesArea: React.FC<MessagesAreaProps> = ({
 			return false
 		}
 		if (lastRawMessage?.type === "say" && lastRawMessage.say === "api_req_started") {
-			try {
-				const info = JSON.parse(lastRawMessage.text || "{}")
-				if (info.cancelReason === "user_cancelled") {
-					return false
-				}
-			} catch {
-				// ignore parse errors
+			const info = safeJsonParse<{ cancelReason?: string }>(lastRawMessage.text, {}, "last api_req_started")
+			if (info.cancelReason === "user_cancelled") {
+				return false
 			}
 		}
 
@@ -128,13 +125,9 @@ export const MessagesArea: React.FC<MessagesAreaProps> = ({
 		}
 		if (lastMsg.say === "user_feedback" || lastMsg.say === "user_feedback_diff") return true
 		if (lastMsg.say === "api_req_started") {
-			try {
-				const info = JSON.parse(lastMsg.text || "{}")
-				// Still in progress (no cost) and nothing has streamed after it yet
-				return info.cost == null
-			} catch {
-				return true
-			}
+			const info = safeJsonParse<{ cost?: number | null }>(lastMsg.text, {}, "visible api_req_started")
+			// Still in progress (no cost) and nothing has streamed after it yet
+			return info.cost == null
 		}
 		return false
 	}, [lastRawMessage, groupedMessages.length, lastVisibleMessage, lastVisibleRow, modifiedMessages])
@@ -228,11 +221,11 @@ export const MessagesArea: React.FC<MessagesAreaProps> = ({
 					className="scrollable grow overflow-y-scroll"
 					components={virtuosoComponents}
 					data={displayedGroupedMessages}
-					// increasing top by 3_000 to prevent jumping around when user collapses a row
+					// Keep overscan finite so Virtuoso can actually virtualize long sessions.
 					increaseViewportBy={{
-						top: 3_000,
-						bottom: Number.MAX_SAFE_INTEGER,
-					}} // hack to make sure the last message is always rendered to get truly perfect scroll to bottom animation when new messages are added (Number.MAX_SAFE_INTEGER is safe for arithmetic operations, which is all virtuoso uses this value for in src/sizeRangeSystem.ts)
+						top: 1_500,
+						bottom: 1_500,
+					}}
 					initialTopMostItemIndex={displayedGroupedMessages.length - 1} // messages is the raw format returned by extension, modifiedMessages is the manipulated structure that combines certain messages of related type, and visibleMessages is the filtered structure that removes messages that should not be rendered
 					itemContent={itemContent}
 					key={task.ts}

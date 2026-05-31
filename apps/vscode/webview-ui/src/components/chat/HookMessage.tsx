@@ -2,6 +2,7 @@ import { ClineMessage } from "@shared/ExtensionMessage"
 import { EmptyRequest } from "@shared/proto/cline/common"
 import { memo, useMemo, useState } from "react"
 import { TaskServiceClient } from "@/services/grpc-client"
+import { safeJsonParse } from "@/utils/safeJsonParse"
 import { CHAT_ROW_EXPANDED_BG_COLOR } from "../common/CodeBlock"
 import { HOOK_OUTPUT_STRING } from "./constants"
 
@@ -114,12 +115,7 @@ const HookMessage = memo(({ message, CommandOutput }: HookMessageProps) => {
 
 		const { metadata: metadataStr, output } = splitMessage(message.text || "")
 
-		let hookMetadata: HookMetadata
-		try {
-			hookMetadata = JSON.parse(metadataStr)
-		} catch {
-			hookMetadata = { hookName: "Unknown", status: "unknown" }
-		}
+		const hookMetadata = safeJsonParse<HookMetadata>(metadataStr, { hookName: "Unknown", status: "unknown" }, "hook metadata")
 
 		return { metadata: hookMetadata, output }
 	}, [message.text])

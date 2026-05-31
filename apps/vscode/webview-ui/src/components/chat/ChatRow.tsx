@@ -48,6 +48,7 @@ import { useExtensionState } from "@/context/ExtensionStateContext"
 import { cn } from "@/lib/utils"
 import { FileServiceClient, UiServiceClient } from "@/services/grpc-client"
 import { findMatchingResourceOrTemplate, getMcpServerDisplayName } from "@/utils/mcp"
+import { safeJsonParse } from "@/utils/safeJsonParse"
 import CodeAccordian, { cleanPathPrefix } from "../common/CodeAccordian"
 import { CommandOutputContent, CommandOutputRow } from "./CommandOutputRow"
 import { CompletionOutputRow } from "./CompletionOutputRow"
@@ -202,10 +203,10 @@ export const ChatRowContent = memo(
 
 		const [cost, apiReqCancelReason, apiReqStreamingFailedMessage] = useMemo(() => {
 			if (message.text != null && message.say === "api_req_started") {
-				const info: ClineApiReqInfo = JSON.parse(message.text)
-				return [info.cost, info.cancelReason, info.streamingFailedMessage, info.retryStatus]
+				const info = safeJsonParse<ClineApiReqInfo>(message.text, {} as ClineApiReqInfo, "chat api_req_started")
+				return [info.cost, info.cancelReason, info.streamingFailedMessage]
 			}
-			return [undefined, undefined, undefined, undefined, undefined]
+			return [undefined, undefined, undefined]
 		}, [message.text, message.say])
 
 		// when resuming task last won't be api_req_failed but a resume_task message so api_req_started will show loading spinner. that's why we just remove the last api_req_started that failed without streaming anything
@@ -328,7 +329,11 @@ export const ChatRowContent = memo(
 						<span className="font-bold text-foreground">Cline wants to execute this command:</span>,
 					]
 				case "use_mcp_server":
-					const mcpServerUse = JSON.parse(message.text || "{}") as ClineAskUseMcpServer
+					const mcpServerUse = safeJsonParse<ClineAskUseMcpServer>(
+						message.text,
+						{} as ClineAskUseMcpServer,
+						"use_mcp_server header",
+					)
 					return [
 						isMcpServerResponding ? (
 							<ProgressIndicator />
@@ -373,23 +378,19 @@ export const ChatRowContent = memo(
 
 		const tool = useMemo(() => {
 			if (message.ask === "tool" || message.say === "tool") {
-				return JSON.parse(message.text || "{}") as ClineSayTool
+				return safeJsonParse<ClineSayTool>(message.text, {} as ClineSayTool, "tool message")
 			}
 			return null
 		}, [message.ask, message.say, message.text])
 
 		const conditionalRulesInfo = useMemo(() => {
 			if (message.say !== "conditional_rules_applied" || !message.text) return null
-			try {
-				const parsed = JSON.parse(message.text) as unknown
-				if (!parsed || typeof parsed !== "object" || !Array.isArray((parsed as any).rules)) {
-					return null
-				}
-				return parsed as {
-					rules: Array<{ name: string; matchedConditions: Record<string, string[]> }>
-				}
-			} catch {
+			const parsed = safeJsonParse<unknown>(message.text, null, "conditional rules")
+			if (!parsed || typeof parsed !== "object" || !Array.isArray((parsed as any).rules)) {
 				return null
+			}
+			return parsed as {
+				rules: Array<{ name: string; matchedConditions: Record<string, string[]> }>
 			}
 		}, [message.say, message.text])
 
@@ -778,7 +779,11 @@ export const ChatRowContent = memo(
 		}
 
 		if (message.ask === "use_mcp_server" || message.say === "use_mcp_server") {
-			const useMcpServer = JSON.parse(message.text || "{}") as ClineAskUseMcpServer
+			const useMcpServer = safeJsonParse<ClineAskUseMcpServer>(
+				message.text,
+				{} as ClineAskUseMcpServer,
+				"use_mcp_server body",
+			)
 			const server = mcpServers.find((server) => server.name === useMcpServer.serverName)
 			return (
 				<div>
@@ -925,7 +930,7 @@ export const ChatRowContent = memo(
 							/>
 						)
 					case "user_feedback_diff":
-						const tool = JSON.parse(message.text || "{}") as ClineSayTool
+						const tool = safeJsonParse<ClineSayTool>(message.text, {} as ClineSayTool, "user_feedback_diff")
 						return (
 							<div className="w-full -mt-2.5">
 								<CodeAccordian
@@ -952,19 +957,16 @@ export const ChatRowContent = memo(
 							</div>
 						)
 					case "generate_explanation": {
-						let explanationInfo: ClineSayGenerateExplanation = {
-							title: "code changes",
-							fromRef: "",
-							toRef: "",
-							status: "generating",
-						}
-						try {
-							if (message.text) {
-								explanationInfo = JSON.parse(message.text)
-							}
-						} catch {
-							// Use defaults if parsing fails
-						}
+						const explanationInfo = safeJsonParse<ClineSayGenerateExplanation>(
+							message.text,
+							{
+								title: "code changes",
+								fromRef: "",
+								toRef: "",
+								status: "generating",
+							},
+							"generate_explanation",
+						)
 						// Check if generation was interrupted:
 						// 1. If status is "generating" but this isn't the last message, it was interrupted
 						// 2. If status is "generating" and lastModifiedMessage is a resume ask, task was just cancelled
@@ -1058,8 +1060,21 @@ export const ChatRowContent = memo(
 							</div>
 						)
 					case "error_retry":
-						try {
-							const retryInfo = JSON.parse(message.text || "{}")
+						{
+							const retryInfo = safeJsonParse<{
+								attempt?: number
+								maxAttempts?: number
+								delaySeconds?: number
+								failed?: boolean
+								errorMessage?: string
+							} | null>(message.text, null, "error_retry")
+							if (!retryInfo) {
+								return (
+									<div className="text-foreground">
+										<MarkdownRow markdown={message.text} />
+									</div>
+								)
+							}
 							const { attempt, maxAttempts, delaySeconds, failed, errorMessage } = retryInfo
 							const isFailed = failed === true
 
@@ -1093,13 +1108,6 @@ export const ChatRowContent = memo(
 											)}
 										</div>
 									</div>
-								</div>
-							)
-						} catch (_e) {
-							// Fallback if JSON parsing fails
-							return (
-								<div className="text-foreground">
-									<MarkdownRow markdown={message.text} />
 								</div>
 							)
 						}
@@ -1191,14 +1199,16 @@ export const ChatRowContent = memo(
 						let question: string | undefined
 						let options: string[] | undefined
 						let selected: string | undefined
-						try {
-							const parsedMessage = JSON.parse(message.text || "{}") as ClineAskQuestion
+						{
+							const parsedMessage = safeJsonParse<ClineAskQuestion | null>(message.text, null, "followup ask")
+							if (parsedMessage) {
 							question = parsedMessage.question
 							options = parsedMessage.options
 							selected = parsedMessage.selected
-						} catch (_e) {
+							} else {
 							// legacy messages would pass question directly
 							question = message.text
+							}
 						}
 
 						return (
@@ -1273,14 +1283,20 @@ export const ChatRowContent = memo(
 						let response: string | undefined
 						let options: string[] | undefined
 						let selected: string | undefined
-						try {
-							const parsedMessage = JSON.parse(message.text || "{}") as ClinePlanModeResponse
+						{
+							const parsedMessage = safeJsonParse<ClinePlanModeResponse | null>(
+								message.text,
+								null,
+								"plan_mode_respond ask",
+							)
+							if (parsedMessage) {
 							response = parsedMessage.response
 							options = parsedMessage.options
 							selected = parsedMessage.selected
-						} catch (_e) {
+							} else {
 							// legacy messages would pass response directly
 							response = message.text
+							}
 						}
 						return (
 							<div>

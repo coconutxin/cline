@@ -3,6 +3,7 @@ import type { Mode } from "@shared/storage/types"
 import type { LucideIcon } from "lucide-react"
 import type React from "react"
 import { useMemo } from "react"
+import { safeJsonParse } from "@/utils/safeJsonParse"
 import { cleanPathPrefix } from "../common/CodeAccordian"
 import { getIconByToolName } from "./chat-view"
 import { isApiReqAbsorbable, isLowStakesTool } from "./chat-view/utils/messageUtils"
@@ -77,15 +78,11 @@ const collectToolsInRange = (
 			continue
 		}
 
-		try {
-			const tool = JSON.parse(msg.text || "{}") as ClineSayTool
-			const activityText = getActivityText(tool)
-			if (activityText) {
-				const toolIcon = getIconByToolName(tool.tool)
-				activities.push({ icon: toolIcon, text: activityText })
-			}
-		} catch {
-			// ignore parse errors
+		const tool = safeJsonParse<ClineSayTool>(msg.text, {} as ClineSayTool, "request start tool")
+		const activityText = getActivityText(tool)
+		if (activityText) {
+			const toolIcon = getIconByToolName(tool.tool)
+			activities.push({ icon: toolIcon, text: activityText })
 		}
 	}
 	return activities
@@ -96,12 +93,11 @@ const findCurrentApiReq = (messages: ClineMessage[]): { index: number; hasCost: 
 	for (let i = messages.length - 1; i >= 0; i--) {
 		const msg = messages[i]
 		if (msg.say === "api_req_started" && msg.text) {
-			try {
-				const info = JSON.parse(msg.text)
-				return { index: i, hasCost: info.cost != null }
-			} catch {
+			const info = safeJsonParse<{ cost?: number | null } | null>(msg.text, null, "current api_req_started")
+			if (!info) {
 				return null
 			}
+			return { index: i, hasCost: info.cost != null }
 		}
 	}
 	return null
@@ -112,13 +108,9 @@ const findPrevCompletedApiReq = (messages: ClineMessage[], beforeIdx: number): n
 	for (let i = beforeIdx - 1; i >= 0; i--) {
 		const msg = messages[i]
 		if (msg.say === "api_req_started" && msg.text) {
-			try {
-				const info = JSON.parse(msg.text)
-				if (info.cost != null) {
-					return i
-				}
-			} catch {
-				// ignore parse errors
+			const info = safeJsonParse<{ cost?: number | null }>(msg.text, {}, "previous api_req_started")
+			if (info.cost != null) {
+				return i
 			}
 		}
 	}
@@ -190,12 +182,12 @@ export const RequestStartRow: React.FC<RequestStartRowProps> = ({
 				for (let i = idx - 1; i >= 0; i--) {
 					const prevMsg = clineMessages[i]
 					if (prevMsg.say === "api_req_started" && prevMsg.text) {
-						try {
-							const info = JSON.parse(prevMsg.text)
-							return info.cost != null
-						} catch {
-							return false
-						}
+						const info = safeJsonParse<{ cost?: number | null }>(
+							prevMsg.text,
+							{},
+							"completed tool api_req_started",
+						)
+						return info.cost != null
 					}
 				}
 			}

@@ -1,4 +1,5 @@
 import type { ClineMessage, ClineSayTool } from "@shared/ExtensionMessage"
+import { safeJsonParse } from "@/utils/safeJsonParse"
 import type { Mode } from "@shared/storage/types"
 
 /**
@@ -245,13 +246,9 @@ export function getButtonConfig(message: ClineMessage | undefined, _mode: Mode =
 			// Tool approval (most common)
 			case "tool": {
 				// Only parse JSON if we need to determine save vs approve
-				try {
-					const tool = JSON.parse(message.text || "{}") as ClineSayTool
-					if (tool.tool === "editedExistingFile" || tool.tool === "newFileCreated" || tool.tool === "fileDeleted") {
-						return BUTTON_CONFIGS.tool_save
-					}
-				} catch {
-					// Fall through to default tool approval
+				const tool = safeJsonParse<ClineSayTool>(message.text, {} as ClineSayTool, "tool button config")
+				if (tool.tool === "editedExistingFile" || tool.tool === "newFileCreated" || tool.tool === "fileDeleted") {
+					return BUTTON_CONFIGS.tool_save
 				}
 				return BUTTON_CONFIGS.tool_approve
 			}
