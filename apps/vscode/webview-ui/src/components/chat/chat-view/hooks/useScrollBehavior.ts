@@ -3,6 +3,7 @@ import debounce from "debounce"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useEvent } from "react-use"
 import { ListRange, VirtuosoHandle } from "react-virtuoso"
+import { getWebviewHeapUsageMb, WEBVIEW_DIAGNOSTIC_LOG_INTERVAL_MS } from "@/utils/webviewDiagnostics"
 import { ScrollBehavior } from "../types/chatTypes"
 
 // Height of the sticky user message header (padding + content)
@@ -38,6 +39,7 @@ export function useScrollBehavior(
 	const [isAtBottom, setIsAtBottom] = useState(false)
 	const [pendingScrollToMessage, setPendingScrollToMessage] = useState<number | null>(null)
 	const [scrolledPastUserMessage, setScrolledPastUserMessage] = useState<ClineMessage | null>(null)
+	const rangeDiagnosticsRef = useRef({ lastLogAt: 0 })
 
 	// Find all user feedback messages
 	const userFeedbackMessages = useMemo(() => {
@@ -128,11 +130,30 @@ export function useScrollBehavior(
 		}
 	}, [checkScrolledPastUserMessage])
 
-	// Handler for when visible range changes in Virtuoso (kept for compatibility but not used for sticky)
-	const handleRangeChanged = useCallback((_range: ListRange) => {
-		// Range changed callback - we now use scroll position instead
-		// but keep this for potential future use
-	}, [])
+	// Handler for when visible range changes in Virtuoso. Keep diagnostics intentionally small:
+	// log counts/ranges only, never full messages or rendered payloads.
+	const handleRangeChanged = useCallback(
+		(range: ListRange) => {
+			const now = Date.now()
+			const isLongSession = messages.length >= 500 || groupedMessages.length >= 200
+
+			if (!isLongSession || now - rangeDiagnosticsRef.current.lastLogAt < WEBVIEW_DIAGNOSTIC_LOG_INTERVAL_MS) {
+				return
+			}
+
+			rangeDiagnosticsRef.current.lastLogAt = now
+			console.info("[webview diagnostics] chat render window", {
+				messages: messages.length,
+				visibleMessages: visibleMessages.length,
+				groupedRows: groupedMessages.length,
+				rangeStart: range.startIndex,
+				rangeEnd: range.endIndex,
+				renderedItems: Math.max(0, range.endIndex - range.startIndex + 1),
+				usedHeapMB: getWebviewHeapUsageMb(),
+			})
+		},
+		[messages.length, visibleMessages.length, groupedMessages.length],
+	)
 	const scrollToBottomSmooth = useMemo(
 		() =>
 			debounce(

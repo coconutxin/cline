@@ -1,7 +1,7 @@
 import { DEFAULT_AUTO_APPROVAL_SETTINGS } from "@shared/AutoApprovalSettings"
 import { findLastIndex } from "@shared/array"
 import { DEFAULT_BROWSER_SETTINGS } from "@shared/BrowserSettings"
-import { DEFAULT_PLATFORM, type ExtensionState } from "@shared/ExtensionMessage"
+import { type ClineMessage, DEFAULT_PLATFORM, type ExtensionState } from "@shared/ExtensionMessage"
 import { DEFAULT_FOCUS_CHAIN_SETTINGS } from "@shared/FocusChainSettings"
 import { DEFAULT_MCP_DISPLAY_MODE } from "@shared/McpDisplayMode"
 import type { UserInfo } from "@shared/proto/cline/account"
@@ -27,6 +27,7 @@ import {
 import { Environment } from "../../../src/shared/config-types"
 import type { McpMarketplaceCatalog, McpServer, McpViewTab } from "../../../src/shared/mcp"
 import { McpServiceClient, ModelsServiceClient, StateServiceClient, UiServiceClient } from "../services/grpc-client"
+import { getWebviewHeapUsageMb, WEBVIEW_DIAGNOSTIC_LOG_INTERVAL_MS } from "../utils/webviewDiagnostics"
 
 export interface ExtensionStateContextType extends ExtensionState {
 	didHydrateState: boolean
@@ -121,6 +122,34 @@ export interface ExtensionStateContextType extends ExtensionState {
 }
 
 export const ExtensionStateContext = createContext<ExtensionStateContextType | undefined>(undefined)
+
+const PARTIAL_MESSAGE_DIAGNOSTIC_MIN_RECEIVED_DELTA = 50
+
+type PartialMessageDiagnostics = {
+	received: number
+	flushes: number
+	invalid: number
+	errors: number
+	lastLogAt: number
+	lastLoggedReceived: number
+	lastLoggedFlushes: number
+	lastLoggedInvalid: number
+	lastLoggedErrors: number
+}
+
+function createPartialMessageDiagnostics(): PartialMessageDiagnostics {
+	return {
+		received: 0,
+		flushes: 0,
+		invalid: 0,
+		errors: 0,
+		lastLogAt: Date.now(),
+		lastLoggedReceived: 0,
+		lastLoggedFlushes: 0,
+		lastLoggedInvalid: 0,
+		lastLoggedErrors: 0,
+	}
+}
 
 export const ExtensionStateContextProvider: React.FC<{
 	children: React.ReactNode
@@ -340,6 +369,10 @@ export const ExtensionStateContextProvider: React.FC<{
 
 	// Add ref for callbacks
 	const relinquishControlCallbacks = useRef<Set<() => void>>(new Set())
+	const pendingPartialMessagesRef = useRef<Map<number, ClineMessage>>(new Map())
+	const partialFlushAnimationFrameRef = useRef<number | null>(null)
+	const partialMessageDiagnosticsRef = useRef<PartialMessageDiagnostics>(createPartialMessageDiagnostics())
+	const latestClineMessageCountRef = useRef(0)
 
 	// Create hook function
 	const onRelinquishControl = useCallback((callback: () => void) => {
@@ -349,6 +382,98 @@ export const ExtensionStateContextProvider: React.FC<{
 		}
 	}, [])
 	const mcpServersSubscriptionRef = useRef<(() => void) | null>(null)
+
+	useEffect(() => {
+		latestClineMessageCountRef.current = state.clineMessages.length
+	}, [state.clineMessages.length])
+
+	const logPartialMessageDiagnostics = useCallback((force = false) => {
+		const diagnostics = partialMessageDiagnosticsRef.current
+		const now = Date.now()
+		const receivedDelta = diagnostics.received - diagnostics.lastLoggedReceived
+		const flushDelta = diagnostics.flushes - diagnostics.lastLoggedFlushes
+		const invalidDelta = diagnostics.invalid - diagnostics.lastLoggedInvalid
+		const errorDelta = diagnostics.errors - diagnostics.lastLoggedErrors
+		const shouldLog =
+			force ||
+			receivedDelta >= PARTIAL_MESSAGE_DIAGNOSTIC_MIN_RECEIVED_DELTA ||
+			now - diagnostics.lastLogAt >= WEBVIEW_DIAGNOSTIC_LOG_INTERVAL_MS
+
+		if (!shouldLog || (receivedDelta === 0 && flushDelta === 0 && invalidDelta === 0 && errorDelta === 0)) {
+			return
+		}
+
+		console.info("[webview diagnostics] partial message throughput", {
+			receivedDelta,
+			flushDelta,
+			invalidDelta,
+			errorDelta,
+			receivedTotal: diagnostics.received,
+			flushTotal: diagnostics.flushes,
+			pending: pendingPartialMessagesRef.current.size,
+			clineMessages: latestClineMessageCountRef.current,
+			usedHeapMB: getWebviewHeapUsageMb(),
+		})
+
+		diagnostics.lastLogAt = now
+		diagnostics.lastLoggedReceived = diagnostics.received
+		diagnostics.lastLoggedFlushes = diagnostics.flushes
+		diagnostics.lastLoggedInvalid = diagnostics.invalid
+		diagnostics.lastLoggedErrors = diagnostics.errors
+	}, [])
+
+	const flushQueuedPartialMessages = useCallback(() => {
+		partialFlushAnimationFrameRef.current = null
+
+		if (pendingPartialMessagesRef.current.size === 0) {
+			return
+		}
+
+		const partialMessages = Array.from(pendingPartialMessagesRef.current.values())
+		pendingPartialMessagesRef.current.clear()
+		partialMessageDiagnosticsRef.current.flushes += 1
+
+		setState((prevState) => {
+			let newClineMessages: ClineMessage[] | undefined
+
+			for (const partialMessage of partialMessages) {
+				const sourceMessages = newClineMessages ?? prevState.clineMessages
+				// worth noting it will never be possible for a more up-to-date message to be sent here or in
+				// normal messages post since the presentAssistantContent function uses lock. We still avoid
+				// applying a queued partial over a completed message in case a full state update landed first.
+				const lastIndex = findLastIndex(sourceMessages, (msg) => msg.ts === partialMessage.ts)
+				if (lastIndex === -1) {
+					continue
+				}
+
+				const currentMessage = sourceMessages[lastIndex]
+				if (partialMessage.partial === true && currentMessage.partial !== true) {
+					continue
+				}
+
+				if (!newClineMessages) {
+					newClineMessages = [...prevState.clineMessages]
+				}
+				newClineMessages[lastIndex] = partialMessage
+			}
+
+			if (!newClineMessages) {
+				return prevState
+			}
+
+			return { ...prevState, clineMessages: newClineMessages }
+		})
+
+		logPartialMessageDiagnostics()
+	}, [logPartialMessageDiagnostics])
+
+	const schedulePartialMessageFlush = useCallback(() => {
+		if (partialFlushAnimationFrameRef.current !== null) {
+			return
+		}
+
+		partialFlushAnimationFrameRef.current = window.requestAnimationFrame(flushQueuedPartialMessages)
+	}, [flushQueuedPartialMessages])
 
 	// Subscribe to state updates and UI events using the gRPC streaming API
 	useEffect(() => {
@@ -503,30 +628,27 @@ export const ExtensionStateContextProvider: React.FC<{
 				try {
 					// Validate critical fields
 					if (!protoMessage.ts || protoMessage.ts <= 0) {
-						console.error("Invalid timestamp in partial message:", protoMessage)
+						partialMessageDiagnosticsRef.current.invalid += 1
+						console.error("Invalid timestamp in partial message", { ts: protoMessage.ts, type: protoMessage.type })
+						logPartialMessageDiagnostics(true)
 						return
 					}
 
 					const partialMessage = convertProtoToClineMessage(protoMessage)
-					setState((prevState) => {
-						// worth noting it will never be possible for a more up-to-date message to be sent here or in normal messages post since the presentAssistantContent function uses lock
-						const lastIndex = findLastIndex(prevState.clineMessages, (msg) => msg.ts === partialMessage.ts)
-						if (lastIndex !== -1) {
-							const newClineMessages = [...prevState.clineMessages]
-							newClineMessages[lastIndex] = partialMessage
-							return { ...prevState, clineMessages: newClineMessages }
-						}
-						return prevState
-					})
+					pendingPartialMessagesRef.current.set(partialMessage.ts, partialMessage)
+					partialMessageDiagnosticsRef.current.received += 1
+					schedulePartialMessageFlush()
+					logPartialMessageDiagnostics()
 				} catch (error) {
-					console.error("Failed to process partial message:", error, protoMessage)
+					partialMessageDiagnosticsRef.current.errors += 1
+					console.error("Failed to process partial message:", error instanceof Error ? error.message : String(error))
+					logPartialMessageDiagnostics(true)
 				}
 			},
 			onError: (error) => {
 				console.error("Error in partialMessage subscription:", error)
 			},
-			onComplete: () => {
-			},
+			onComplete: () => {},
 		})
 
 		// Subscribe to MCP marketplace catalog updates
@@ -649,6 +771,11 @@ export const ExtensionStateContextProvider: React.FC<{
 				partialMessageUnsubscribeRef.current()
 				partialMessageUnsubscribeRef.current = null
 			}
+			if (partialFlushAnimationFrameRef.current !== null) {
+				window.cancelAnimationFrame(partialFlushAnimationFrameRef.current)
+				partialFlushAnimationFrameRef.current = null
+			}
+			pendingPartialMessagesRef.current.clear()
 			if (mcpMarketplaceUnsubscribeRef.current) {
 				mcpMarketplaceUnsubscribeRef.current()
 				mcpMarketplaceUnsubscribeRef.current = null
