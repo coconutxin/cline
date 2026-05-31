@@ -475,6 +475,15 @@ export const ExtensionStateContextProvider: React.FC<{
 		partialFlushAnimationFrameRef.current = window.requestAnimationFrame(flushQueuedPartialMessages)
 	}, [flushQueuedPartialMessages])
 
+	const clearQueuedPartialMessages = useCallback(() => {
+		if (partialFlushAnimationFrameRef.current !== null) {
+			window.cancelAnimationFrame(partialFlushAnimationFrameRef.current)
+			partialFlushAnimationFrameRef.current = null
+		}
+
+		pendingPartialMessagesRef.current.clear()
+	}, [])
+
 	// Subscribe to state updates and UI events using the gRPC streaming API
 	useEffect(() => {
 		// Set up state subscription
@@ -483,6 +492,9 @@ export const ExtensionStateContextProvider: React.FC<{
 				if (response.stateJson) {
 					try {
 						const stateData = JSON.parse(response.stateJson) as ExtensionState
+						// Full state is the canonical source. Drop any queued partial updates so an older
+						// animation-frame flush cannot overwrite fresher full-state message data.
+						clearQueuedPartialMessages()
 						setState((prevState) => {
 							// Versioning logic for autoApprovalSettings
 							const incomingVersion = stateData.autoApprovalSettings?.version ?? 1
@@ -771,11 +783,7 @@ export const ExtensionStateContextProvider: React.FC<{
 				partialMessageUnsubscribeRef.current()
 				partialMessageUnsubscribeRef.current = null
 			}
-			if (partialFlushAnimationFrameRef.current !== null) {
-				window.cancelAnimationFrame(partialFlushAnimationFrameRef.current)
-				partialFlushAnimationFrameRef.current = null
-			}
-			pendingPartialMessagesRef.current.clear()
+			clearQueuedPartialMessages()
 			if (mcpMarketplaceUnsubscribeRef.current) {
 				mcpMarketplaceUnsubscribeRef.current()
 				mcpMarketplaceUnsubscribeRef.current = null
