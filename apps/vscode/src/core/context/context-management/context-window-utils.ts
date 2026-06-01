@@ -28,7 +28,7 @@ export function getContextWindowInfo(api: ApiHandler) {
 			maxAllowedSize = contextWindow - 40_000
 			break
 		default:
-			maxAllowedSize = Math.min(contextWindow - 40_000, Math.floor(contextWindow * 0.9)) // for larger windows, keep at least a 40K or 10% buffer (whichever is greater) before auto-compacting.
+			maxAllowedSize = Math.min(contextWindow - 40_000, Math.floor(contextWindow * 0.8)) // for larger windows, keep at least a 40K or 20% buffer (whichever is greater) before auto-compacting.
 	}
 
 	return { contextWindow, maxAllowedSize }

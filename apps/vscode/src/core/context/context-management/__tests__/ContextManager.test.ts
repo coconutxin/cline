@@ -492,19 +492,19 @@ describe("ContextManager", () => {
 			expect(result).to.equal(true)
 		})
 
-		it("uses a 10% buffer for 500K contexts in the default branch", () => {
+		it("uses a 20% buffer for 500K contexts in the default branch", () => {
 			const api = createMockApi(500_000)
-			// New default branch should compact at 450K (10% buffer), not 460K (fixed 40K buffer)
-			const clineMessages: ClineMessage[] = [createApiReqMessage({ tokensIn: 450_000, tokensOut: 5_000 })]
+			// Default branch should compact at 400K (20% buffer), not 460K (fixed 40K buffer)
+			const clineMessages: ClineMessage[] = [createApiReqMessage({ tokensIn: 400_000, tokensOut: 5_000 })]
 
 			const result = contextManager.shouldCompactContextWindow(clineMessages, api, 0, undefined)
 			expect(result).to.equal(true)
 		})
 
-		it("uses a 10% buffer for 1000K contexts in the default branch", () => {
+		it("uses a 20% buffer for 1000K contexts in the default branch", () => {
 			const api = createMockApi(1_000_000)
-			// New default branch should compact at 900K (10% buffer), not 960K (fixed 40K buffer)
-			const clineMessages: ClineMessage[] = [createApiReqMessage({ tokensIn: 900_000, tokensOut: 5_000 })]
+			// Default branch should compact at 800K (20% buffer), not 960K (fixed 40K buffer)
+			const clineMessages: ClineMessage[] = [createApiReqMessage({ tokensIn: 800_000, tokensOut: 5_000 })]
 
 			const result = contextManager.shouldCompactContextWindow(clineMessages, api, 0, undefined)
 			expect(result).to.equal(true)
