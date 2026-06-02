@@ -2251,6 +2251,18 @@ export const openAiCodexModels = {
 		outputPrice: 0,
 		description: "GPT-5.3 Codex: OpenAI's latest flagship coding model via ChatGPT subscription",
 	},
+	"gpt-5.3-codex-spark": {
+		maxTokens: 32000,
+		contextWindow: 128000,
+		name: "GPT-5.3 Codex Spark",
+		supportsImages: true,
+		supportsPromptCache: true,
+		supportsReasoning: true,
+		// Subscription-based: no per-token costs
+		inputPrice: 0,
+		outputPrice: 0,
+		description: "GPT-5.3 Codex Spark: OpenAI's Ultra-fast coding model",
+	},
 	"gpt-5.2-codex": {
 		maxTokens: 128_000,
 		contextWindow: 400_000,
