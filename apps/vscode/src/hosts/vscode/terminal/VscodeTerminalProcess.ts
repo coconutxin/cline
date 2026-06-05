@@ -39,10 +39,17 @@ export class VscodeTerminalProcess extends EventEmitter<TerminalProcessEvents> i
 	private hotTimer: NodeJS.Timeout | null = null
 	private exitCode: number | null | undefined = undefined
 	private signal: NodeJS.Signals | null = null
+	private completionFallbackTimer: NodeJS.Timeout | null = null
+	private didFinalize = false
 
 	async run(terminal: vscode.Terminal, command: string) {
 		this.exitCode = undefined
 		this.signal = null
+		this.didFinalize = false
+		if (this.completionFallbackTimer) {
+			clearTimeout(this.completionFallbackTimer)
+			this.completionFallbackTimer = null
+		}
 
 		// When command does not produce any output, we can assume the shell integration API failed and as a fallback return the current terminal contents
 		const returnCurrentTerminalContents = async () => {
@@ -65,8 +72,92 @@ export class VscodeTerminalProcess extends EventEmitter<TerminalProcessEvents> i
 			let isFirstChunk = true
 			let didOutputNonCommand = false
 			let didEmitEmptyLine = false
+			let completionFallbackSignal: Promise<"completionFallback"> | null = null
+			let resolveCompletionFallbackSignal: (() => void) | null = null
 
-			for await (let data of stream) {
+			const getCompletionFallbackSignal = () => {
+				if (!completionFallbackSignal) {
+					completionFallbackSignal = new Promise<"completionFallback">((resolve) => {
+						resolveCompletionFallbackSignal = () => resolve("completionFallback")
+					})
+				}
+
+				return completionFallbackSignal
+			}
+
+			const resolveCompletionFallbackWaiter = () => {
+				const resolve = resolveCompletionFallbackSignal
+				completionFallbackSignal = null
+				resolveCompletionFallbackSignal = null
+				resolve?.()
+			}
+
+			const finalizeCompletionOnce = () => {
+				if (this.didFinalize) {
+					return
+				}
+
+				this.didFinalize = true
+				if (this.completionFallbackTimer) {
+					clearTimeout(this.completionFallbackTimer)
+					this.completionFallbackTimer = null
+				}
+				resolveCompletionFallbackWaiter()
+				this.emitRemainingBufferIfListening()
+
+				// For now we don't want this delaying requests since we don't send diagnostics automatically anymore
+				// (previous: "even though the command is finished, we still want to consider it 'hot' in case so that
+				// api request stalls to let diagnostics catch up").
+				if (this.hotTimer) {
+					clearTimeout(this.hotTimer)
+					this.hotTimer = null
+				}
+				this.isHot = false
+
+				this.emit("completed", this.getCompletionDetails())
+				this.emit("continue")
+			}
+
+			const scheduleCompletionMarkerFallback = () => {
+				if (this.completionFallbackTimer || this.didFinalize) {
+					return
+				}
+				getCompletionFallbackSignal()
+
+				// VS Code's shell integration stream can occasionally fail to close after emitting
+				// the official execution-finished marker (OSC 633;D). Defer finalization so the
+				// current chunk is fully cleaned/emitted first, then complete if the stream did not.
+				this.completionFallbackTimer = setTimeout(() => {
+					this.completionFallbackTimer = null
+					finalizeCompletionOnce()
+				}, 0)
+			}
+
+			const iterator = stream[Symbol.asyncIterator]()
+
+			while (true) {
+				const fallbackResult = { completionFallback: true } as const
+				const currentCompletionFallbackSignal = completionFallbackSignal as Promise<"completionFallback"> | null
+				const next = currentCompletionFallbackSignal
+					? await Promise.race([iterator.next(), currentCompletionFallbackSignal.then(() => fallbackResult)])
+					: await iterator.next()
+
+				if ("completionFallback" in next) {
+					const closeStream = iterator.return?.()
+					if (closeStream) {
+						void Promise.resolve(closeStream).catch((error) => {
+							Logger.error("Error closing terminal shell integration stream after completion fallback:", error)
+						})
+					}
+					break
+				}
+
+				if (next.done) {
+					break
+				}
+
+				let data = next.value
+
 				// Parse shell integration completion markers when present.
 				// Sequence format: ]633;D;<exitCode>
 				const completionMatches = [...data.matchAll(/\]633;D(?:;(-?\d+))?/g)]
@@ -76,6 +167,9 @@ export class VscodeTerminalProcess extends EventEmitter<TerminalProcessEvents> i
 					if (Number.isInteger(parsedExitCode)) {
 						this.exitCode = parsedExitCode
 					}
+				}
+				if (latestCompletionMatch) {
+					scheduleCompletionMarkerFallback()
 				}
 
 				// 1. Process chunk and remove artifacts
@@ -227,15 +321,7 @@ export class VscodeTerminalProcess extends EventEmitter<TerminalProcessEvents> i
 				telemetryService.captureTerminalExecution(true, "vscode", "shell_integration")
 			}
 
-			// for now we don't want this delaying requests since we don't send diagnostics automatically anymore (previous: "even though the command is finished, we still want to consider it 'hot' in case so that api request stalls to let diagnostics catch up")
-			// to explain this further, before we would send workspace diagnostics automatically with each request, but now we only send new diagnostics after file edits, so there's no need to wait for a bit after commands run to let diagnostics catch up
-			if (this.hotTimer) {
-				clearTimeout(this.hotTimer)
-			}
-			this.isHot = false
-
-			this.emit("completed", this.getCompletionDetails())
-			this.emit("continue")
+			finalizeCompletionOnce()
 		} else {
 			// no shell integration detected, we'll fallback to running the command and capturing the terminal's output after some time
 			telemetryService.captureTerminalOutputFailure(TerminalOutputFailureReason.NO_SHELL_INTEGRATION, "vscode")

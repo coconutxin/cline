@@ -313,6 +313,11 @@ export async function orchestrateCommandExecution(
 	const switchToFileBased = async () => {
 		if (isWritingToFile) return
 
+		// Switching to file-based logging stops the normal command_output ask stream.
+		// If a chunked ask is pending at this boundary, release it so the task is not
+		// left waiting for an interaction that file mode will no longer drive.
+		releaseAnyPendingCommandOutputAsk()
+
 		isWritingToFile = true
 
 		// FIRST: Flush any pending buffer to UI so the "writing to file" message appears at the end

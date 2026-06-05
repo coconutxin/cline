@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import { EventEmitter } from "events"
 import { describe, it } from "mocha"
 import { orchestrateCommandExecution } from "../CommandOrchestrator"
-import { CHUNK_DEBOUNCE_MS } from "../constants"
+import { CHUNK_DEBOUNCE_MS, MAX_BYTES_BEFORE_FILE } from "../constants"
 import type {
 	CommandExecutorCallbacks,
 	ITerminalManager,
@@ -240,5 +240,43 @@ describe("CommandOrchestrator command_output ask lifecycle", () => {
 
 		process.emit("error", new Error("late error event"))
 		assert.equal(resolvePendingAskCalls, 1, "pending ask should be released at most once")
+	})
+
+	it("settles a pending command_output ask when large output switches to file-based logging", async () => {
+		const process = new FakeTerminalProcess()
+		let askCalls = 0
+		let askSettled = false
+		let resolvePendingAsk: ((value: { response: "messageResponse" }) => void) | null = null
+
+		const callbacks = createCallbacks()
+		callbacks.ask = async () => {
+			askCalls++
+			return new Promise<{ response: "messageResponse" }>((resolve) => {
+				resolvePendingAsk = resolve
+			}).finally(() => {
+				askSettled = true
+			})
+		}
+		callbacks.resolvePendingAsk = () => {
+			resolvePendingAsk?.({ response: "messageResponse" })
+		}
+
+		const orchestrationPromise = orchestrateCommandExecution(process.asResultPromise(), createTerminalManager(), callbacks, {
+			command: "large-output-command",
+		})
+
+		process.emit("line", "line one")
+		await new Promise((resolve) => setTimeout(resolve, CHUNK_DEBOUNCE_MS + 40))
+		assert.equal(askCalls, 1, "expected command_output ask before switching to file-based logging")
+
+		process.emit("line", "x".repeat(MAX_BYTES_BEFORE_FILE + 1))
+		await waitFor(() => askSettled, 500)
+
+		process.complete({ exitCode: 0, signal: null })
+		const result = await orchestrationPromise
+
+		assert.equal(result.completed, true)
+		assert.ok(result.logFilePath, "expected large output to be written to a log file")
+		assert.equal(askSettled, true, "pending command_output ask should settle at file-mode boundary")
 	})
 })
