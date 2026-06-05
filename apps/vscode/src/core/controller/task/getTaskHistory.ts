@@ -1,7 +1,11 @@
-import { GetTaskHistoryRequest, TaskHistoryArray, WorkspaceMatchStatus } from "@shared/proto/cline/task"
-import { Logger } from "@/shared/services/Logger"
-import { Controller } from ".."
-import { checkHistoryItemWorkspaceAffinity } from "./workspaceAffinity"
+import {
+	GetTaskHistoryRequest,
+	TaskHistoryArray,
+	WorkspaceMatchStatus,
+} from "@shared/proto/cline/task";
+import { Logger } from "@/shared/services/Logger";
+import { Controller } from "..";
+import { checkHistoryItemWorkspaceAffinity } from "./workspaceAffinity";
 
 /**
  * Gets filtered task history
@@ -9,78 +13,91 @@ import { checkHistoryItemWorkspaceAffinity } from "./workspaceAffinity"
  * @param request Filter parameters for task history
  * @returns TaskHistoryArray with filtered task list
  */
-export async function getTaskHistory(controller: Controller, request: GetTaskHistoryRequest): Promise<TaskHistoryArray> {
+export async function getTaskHistory(
+	controller: Controller,
+	request: GetTaskHistoryRequest,
+): Promise<TaskHistoryArray> {
 	try {
-		const { favoritesOnly, currentWorkspaceOnly, searchQuery, sortBy } = request
+		const { favoritesOnly, currentWorkspaceOnly, searchQuery, sortBy } =
+			request;
 
 		// Get task history from global state
-		const taskHistory = controller.stateManager.getGlobalStateKey("taskHistory")
-		const workspaceManager = await controller.ensureWorkspaceManager()
-		const workspaceRoots = workspaceManager?.getRoots() ?? []
+		const taskHistory =
+			controller.stateManager.getGlobalStateKey("taskHistory");
+		const workspaceManager = await controller.ensureWorkspaceManager();
+		const workspaceRoots = workspaceManager?.getRoots() ?? [];
 
 		// Apply filters
 		let filteredTasks = taskHistory.filter((item) => {
 			// Basic filter: must have timestamp and task content
-			const hasRequiredFields = item.ts && item.task
+			const hasRequiredFields = item.ts && item.task;
 			if (!hasRequiredFields) {
-				return false
+				return false;
 			}
 
 			// Apply favorites filter if requested
 			if (favoritesOnly && !item.isFavorited) {
-				return false
+				return false;
 			}
 
 			// Apply current workspace filter if requested
 			if (currentWorkspaceOnly) {
-				const affinity = checkHistoryItemWorkspaceAffinity(item, workspaceRoots)
+				const affinity = checkHistoryItemWorkspaceAffinity(
+					item,
+					workspaceRoots,
+				);
 				if (affinity.status !== "matched") {
-					return false
+					return false;
 				}
 			}
 
-			return true
-		})
+			return true;
+		});
 
 		// Apply search if provided
 		if (searchQuery) {
 			// Simple search implementation
-			const query = searchQuery.toLowerCase()
-			filteredTasks = filteredTasks.filter((item) => item.task.toLowerCase().includes(query))
+			const query = searchQuery.toLowerCase();
+			filteredTasks = filteredTasks.filter((item) =>
+				item.task.toLowerCase().includes(query),
+			);
 		}
 
 		// Calculate total count before sorting
-		const totalCount = filteredTasks.length
+		const totalCount = filteredTasks.length;
 
 		// Apply sorting
 		if (sortBy) {
 			filteredTasks.sort((a, b) => {
 				switch (sortBy) {
 					case "oldest":
-						return a.ts - b.ts
+						return a.ts - b.ts;
 					case "mostExpensive":
-						return (b.totalCost || 0) - (a.totalCost || 0)
+						return (b.totalCost || 0) - (a.totalCost || 0);
 					case "mostTokens":
 						return (
 							(b.tokensIn || 0) +
 							(b.tokensOut || 0) +
 							(b.cacheWrites || 0) +
 							(b.cacheReads || 0) -
-							((a.tokensIn || 0) + (a.tokensOut || 0) + (a.cacheWrites || 0) + (a.cacheReads || 0))
-						)
+							((a.tokensIn || 0) +
+								(a.tokensOut || 0) +
+								(a.cacheWrites || 0) +
+								(a.cacheReads || 0))
+						);
 					case "newest":
 					default:
-						return b.ts - a.ts
+						return b.ts - a.ts;
 				}
-			})
+			});
 		} else {
 			// Default sort by newest
-			filteredTasks.sort((a, b) => b.ts - a.ts)
+			filteredTasks.sort((a, b) => b.ts - a.ts);
 		}
 
 		// Map to response format
 		const tasks = filteredTasks.map((item) => {
-			const affinity = checkHistoryItemWorkspaceAffinity(item, workspaceRoots)
+			const affinity = checkHistoryItemWorkspaceAffinity(item, workspaceRoots);
 
 			return {
 				id: item.id,
@@ -101,15 +118,15 @@ export async function getTaskHistory(controller: Controller, request: GetTaskHis
 							? WorkspaceMatchStatus.WORKSPACE_MATCH_STATUS_MISMATCHED
 							: WorkspaceMatchStatus.WORKSPACE_MATCH_STATUS_UNKNOWN,
 				workspaceAffinityPath: affinity.taskWorkspacePath || "",
-			}
-		})
+			};
+		});
 
 		return TaskHistoryArray.create({
 			tasks,
 			totalCount,
-		})
+		});
 	} catch (error) {
-		Logger.error("Error in getTaskHistory:", error)
-		throw error
+		Logger.error("Error in getTaskHistory:", error);
+		throw error;
 	}
 }

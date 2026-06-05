@@ -70,7 +70,7 @@ const DEFAULT_CONTEXT_MENU_OPTION = getContextMenuOptionIndex(ContextMenuOptionT
 interface ChatTextAreaProps {
 	inputValue: string
 	activeQuote: string | null
-	setInputValue: (value: string) => void
+	setInputValue: React.Dispatch<React.SetStateAction<string>>
 	sendingDisabled: boolean
 	placeholderText: string
 	selectedFiles: string[]
@@ -248,6 +248,9 @@ const ChatTextArea = forwardRef<HTMLTextAreaElement, ChatTextAreaProps>(
 		const contextMenuContainerRef = useRef<HTMLDivElement>(null)
 
 		const [shownTooltipMode, setShownTooltipMode] = useState<Mode | null>(null)
+		const [isModeSwitching, setIsModeSwitching] = useState(false)
+		const isModeSwitchingRef = useRef(false)
+		const latestInputValueRef = useRef(inputValue)
 		const [pendingInsertions, setPendingInsertions] = useState<string[]>([])
 		const _shiftHoldTimerRef = useRef<NodeJS.Timeout | null>(null)
 		const [showUnsupportedFileError, setShowUnsupportedFileError] = useState(false)
@@ -258,6 +261,12 @@ const ChatTextArea = forwardRef<HTMLTextAreaElement, ChatTextAreaProps>(
 		const [fileSearchResults, setFileSearchResults] = useState<SearchResult[]>([])
 		const [searchLoading, setSearchLoading] = useState(false)
 		const [, metaKeyChar] = useMetaKeyDetection(platform)
+		const isSendDisabled = sendingDisabled || isModeSwitching
+		const canSend = () => !isSendDisabled && !isModeSwitchingRef.current
+
+		useEffect(() => {
+			latestInputValueRef.current = inputValue
+		}, [inputValue])
 
 		// Fetch git commits when Git is selected or when typing a hash
 		useEffect(() => {
@@ -583,7 +592,7 @@ const ChatTextArea = forwardRef<HTMLTextAreaElement, ChatTextAreaProps>(
 				if (event.key === "Enter" && !event.shiftKey && !isComposing) {
 					event.preventDefault()
 
-					if (!sendingDisabled) {
+					if (canSend()) {
 						setIsTextAreaFocused(false)
 						onSend()
 					}
@@ -670,7 +679,7 @@ const ChatTextArea = forwardRef<HTMLTextAreaElement, ChatTextAreaProps>(
 				selectedSlashCommandsIndex,
 				slashCommandsQuery,
 				handleSlashCommandsSelect,
-				sendingDisabled,
+				isSendDisabled,
 			],
 		)
 
@@ -717,6 +726,7 @@ const ChatTextArea = forwardRef<HTMLTextAreaElement, ChatTextAreaProps>(
 			(e: React.ChangeEvent<HTMLTextAreaElement>) => {
 				const newValue = e.target.value
 				const newCursorPosition = e.target.selectionStart
+				latestInputValueRef.current = newValue
 				setInputValue(newValue)
 				setCursorPosition(newCursorPosition)
 				let showMenu = shouldShowContextMenu(newValue, newCursorPosition)
@@ -1017,25 +1027,41 @@ const ChatTextArea = forwardRef<HTMLTextAreaElement, ChatTextAreaProps>(
 		)
 
 		const onModeToggle = useCallback(() => {
+			if (isModeSwitchingRef.current) {
+				return
+			}
+
 			void (async () => {
-				const convertedProtoMode = mode === "plan" ? PlanActMode.ACT : PlanActMode.PLAN
-				const response = await StateServiceClient.togglePlanActModeProto(
-					TogglePlanActModeRequest.create({
-						mode: convertedProtoMode,
-						chatContent: {
-							message: inputValue.trim() ? inputValue : undefined,
-							images: selectedImages,
-							files: selectedFiles,
-						},
-					}),
-				)
-				// Focus the textarea after mode toggle with slight delay
-				setTimeout(() => {
-					if (response.value) {
+				const inputSnapshot = inputValue
+				isModeSwitchingRef.current = true
+				setIsModeSwitching(true)
+
+				try {
+					const convertedProtoMode = mode === "plan" ? PlanActMode.ACT : PlanActMode.PLAN
+					const response = await StateServiceClient.togglePlanActModeProto(
+						TogglePlanActModeRequest.create({
+							mode: convertedProtoMode,
+							chatContent: {
+								message: inputSnapshot.trim() ? inputSnapshot : undefined,
+								images: selectedImages,
+								files: selectedFiles,
+							},
+						}),
+					)
+
+					if (response.value && latestInputValueRef.current === inputSnapshot) {
+						latestInputValueRef.current = ""
 						setInputValue("")
 					}
-					textAreaRef.current?.focus()
-				}, 100)
+				} finally {
+					isModeSwitchingRef.current = false
+					setIsModeSwitching(false)
+
+					// Focus the textarea after mode toggle with slight delay
+					setTimeout(() => {
+						textAreaRef.current?.focus()
+					}, 100)
+				}
 			})()
 		}, [mode, inputValue, selectedImages, selectedFiles, setInputValue])
 
@@ -1537,10 +1563,10 @@ const ChatTextArea = forwardRef<HTMLTextAreaElement, ChatTextAreaProps>(
 						style={{ height: textAreaBaseHeight }}>
 						<div className="flex flex-row items-center">
 							<div
-								className={cn("input-icon-button", { disabled: sendingDisabled }, "codicon codicon-send text-sm")}
+								className={cn("input-icon-button", { disabled: isSendDisabled }, "codicon codicon-send text-sm")}
 								data-testid="send-button"
 								onClick={() => {
-									if (!sendingDisabled) {
+									if (canSend()) {
 										setIsTextAreaFocused(false)
 										onSend()
 									}
@@ -1621,7 +1647,7 @@ const ChatTextArea = forwardRef<HTMLTextAreaElement, ChatTextAreaProps>(
 							</p>
 						</TooltipContent>
 						<TooltipTrigger>
-							<SwitchContainer data-testid="mode-switch" disabled={false} onClick={onModeToggle}>
+							<SwitchContainer data-testid="mode-switch" disabled={isModeSwitching} onClick={onModeToggle}>
 								<Slider isAct={mode === "act"} isPlan={mode === "plan"} />
 								{["Plan", "Act"].map((m) => (
 									<div

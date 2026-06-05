@@ -1,12 +1,12 @@
-import { StringRequest } from "@shared/proto/cline/common"
-import { describe, it } from "mocha"
-import sinon from "sinon"
-import "should"
-import { showTaskWithId } from "./showTaskWithId"
+import { StringRequest } from "@shared/proto/cline/common";
+import { describe, it } from "mocha";
+import sinon from "sinon";
+import "should";
+import { showTaskWithId } from "./showTaskWithId";
 
 describe("showTaskWithId", () => {
 	it("does not initialize a history task when workspace affinity check fails", async () => {
-		const initTask = sinon.stub().resolves("task-1")
+		const initTask = sinon.stub().resolves("task-1");
 		const controller = {
 			stateManager: {
 				getGlobalStateKey: sinon
@@ -26,11 +26,14 @@ describe("showTaskWithId", () => {
 			},
 			ensureHistoryItemMatchesCurrentWorkspace: sinon.stub().resolves(false),
 			initTask,
-		}
+		};
 
-		const response = await showTaskWithId(controller as any, StringRequest.create({ value: "task-1" }))
+		const response = await showTaskWithId(
+			controller as any,
+			StringRequest.create({ value: "task-1" }),
+		);
 
-		initTask.called.should.equal(false)
-		response.id.should.equal("task-1")
-	})
-})
+		initTask.called.should.equal(false);
+		response.id.should.equal("task-1");
+	});
+});
