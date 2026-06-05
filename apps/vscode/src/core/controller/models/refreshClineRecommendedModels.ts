@@ -38,7 +38,7 @@ function getHardcodedRecommendedModels(): ClineRecommendedModelsData {
 
 function useUpstreamRecommendedModels(): boolean {
 	return featureFlagsService.getBooleanFlagEnabled(
-		FeatureFlag.CLINE_RECOMMENDED_MODELS_UPSTREAM,
+		FeatureFlag.EXTENSION_CLINE_MODELS_ENDPOINT,
 	);
 }
 

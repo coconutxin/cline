@@ -45,7 +45,7 @@ describe("refreshClineRecommendedModels", () => {
 		sandbox
 			.stub(getFeatureFlagsService(), "getBooleanFlagEnabled")
 			.callsFake((flag) => {
-				return flag === FeatureFlag.CLINE_RECOMMENDED_MODELS_UPSTREAM;
+				return flag === FeatureFlag.EXTENSION_CLINE_MODELS_ENDPOINT;
 			});
 		sandbox.stub(ClineEnv, "config").returns({
 			environment: Environment.production,
@@ -89,6 +89,46 @@ describe("refreshClineRecommendedModels", () => {
 				},
 			],
 		});
+	});
+
+	it("uses the in-memory cache while the rollout flag remains on", async () => {
+		sandbox
+			.stub(getFeatureFlagsService(), "getBooleanFlagEnabled")
+			.callsFake((flag) => {
+				return flag === FeatureFlag.EXTENSION_CLINE_MODELS_ENDPOINT;
+			});
+		sandbox.stub(ClineEnv, "config").returns({
+			environment: Environment.production,
+			appBaseUrl: "https://app.cline-mock.bot",
+			apiBaseUrl: "https://api.cline-mock.bot",
+			mcpBaseUrl: "https://api.cline-mock.bot/v1/mcp",
+		});
+		sandbox.stub(disk, "ensureCacheDirectoryExists").resolves("/tmp");
+		sandbox.stub(fs, "writeFile").resolves();
+		const axiosGetStub = sandbox.stub(axios, "get").resolves({
+			data: {
+				recommended: [
+					{
+						id: "google/gemini-3.1-pro-preview",
+						description: "Remote recommended",
+						tags: ["NEW"],
+					},
+				],
+				free: [
+					{
+						id: "minimax/minimax-m2.5",
+						description: "Remote free",
+						tags: ["FREE"],
+					},
+				],
+			},
+		});
+
+		const firstResult = await refreshClineRecommendedModels();
+		const secondResult = await refreshClineRecommendedModels();
+
+		expect(axiosGetStub.calledOnce).to.equal(true);
+		expect(secondResult).to.deep.equal(firstResult);
 	});
 
 	it("uses hardcoded models when rollout flag is turned off after upstream cache is populated", async () => {
