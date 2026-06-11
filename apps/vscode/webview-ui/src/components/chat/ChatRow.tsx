@@ -1087,6 +1087,7 @@ export const ChatRowContent = memo(
 					case "error_retry":
 						{
 							const retryInfo = safeJsonParse<{
+								retrySource?: "mistake_limit"
 								attempt?: number
 								maxAttempts?: number
 								delaySeconds?: number
@@ -1100,8 +1101,16 @@ export const ChatRowContent = memo(
 									</div>
 								)
 							}
-							const { attempt, maxAttempts, delaySeconds, failed, errorMessage } = retryInfo
+							const { attempt, maxAttempts, delaySeconds, failed, errorMessage, retrySource } = retryInfo
 							const isFailed = failed === true
+							const isMistakeLimitRetry = retrySource === "mistake_limit"
+							const title = isMistakeLimitRetry
+								? isFailed
+									? "Consecutive Mistake Recovery Failed"
+									: "Recovering from Consecutive Mistakes"
+								: isFailed
+									? "Auto-Retry Failed"
+									: "Auto-Retry in Progress"
 
 							return (
 								<div className="flex flex-col gap-2">
@@ -1116,11 +1125,21 @@ export const ChatRowContent = memo(
 												<RefreshCwIcon className="mr-2 size-2 animate-spin" />
 											)}
 											<span className="font-medium text-foreground">
-												{isFailed ? "Auto-Retry Failed" : "Auto-Retry in Progress"}
+												{title}
 											</span>
 										</div>
 										<div className="text-foreground opacity-80">
-											{isFailed ? (
+											{isMistakeLimitRetry && isFailed ? (
+												<span>
+													Cline could not recover from consecutive mistakes after <strong>{maxAttempts}</strong>{" "}
+													automatic attempts. User guidance is required.
+												</span>
+											) : isMistakeLimitRetry ? (
+												<span>
+													Recovery attempt <strong>{attempt}</strong> of <strong>{maxAttempts}</strong> - retrying
+													in {delaySeconds} seconds...
+												</span>
+											) : isFailed ? (
 												<span>
 													Auto-retry failed after <strong>{maxAttempts}</strong> attempts. Manual
 													intervention required.
