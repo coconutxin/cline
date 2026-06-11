@@ -130,6 +130,10 @@ export class ToolExecutor {
 		this.registerToolHandlers()
 	}
 
+	setApi(api: ApiHandler): void {
+		this.api = api
+	}
+
 	// Create a properly typed TaskConfig object for handlers
 	// NOTE: modifying this object in the tool handlers is okay since these are all references to the singular ToolExecutor instance's variables. However, be careful modifying this object assuming it will update the ToolExecutor instance, e.g. config.browserSession = ... will not update the ToolExecutor.browserSession instance variable. Use applyLatestBrowserSettings() instead.
 	private asToolConfig(): TaskConfig {
@@ -281,7 +285,11 @@ export class ToolExecutor {
 		const model = this.api.getModel()
 		const apiConfig = this.stateManager.getApiConfiguration()
 		const mode = this.stateManager.getGlobalSettingsKey("mode")
-		const providerId = (mode === "plan" ? apiConfig.planModeApiProvider : apiConfig.actModeApiProvider) as string
+		const configuredProviderId = (mode === "plan" ? apiConfig.planModeApiProvider : apiConfig.actModeApiProvider) as string
+		const providerId =
+			this.taskState.toolUseFailureFallbackActive && this.taskState.toolUseFailureFallbackProviderId
+				? this.taskState.toolUseFailureFallbackProviderId
+				: configuredProviderId
 		return isParallelToolCallingEnabled(enableParallelSetting, { providerId, model, mode })
 	}
 

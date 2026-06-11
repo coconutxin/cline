@@ -62,6 +62,12 @@ export class TaskState {
 	autoRetryAttempts = 0
 	mistakeLimitAutoRetryAttempts = 0
 	suppressMistakeLimitAutoRetry = false
+	toolUseFailureFallbackUsed = false
+	toolUseFailureFallbackActive = false
+	toolUseFailureFallbackProviderId?: string
+	toolUseFailureFallbackModelId?: string
+	toolUseFailureFallbackPrimaryProviderId?: string
+	toolUseFailureFallbackPrimaryModelId?: string
 
 	// Task Initialization
 	isInitialized = false
