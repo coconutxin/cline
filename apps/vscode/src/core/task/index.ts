@@ -2404,6 +2404,7 @@ export class Task {
 				await this.say(
 					"error_retry",
 					JSON.stringify({
+						retrySource: "mistake_limit",
 						attempt: this.taskState.mistakeLimitAutoRetryAttempts,
 						maxAttempts: 3,
 						delaySeconds: delay / 1000,
@@ -2417,6 +2418,7 @@ export class Task {
 				await this.say(
 					"error_retry",
 					JSON.stringify({
+						retrySource: "mistake_limit",
 						attempt: 3,
 						maxAttempts: 3,
 						delaySeconds: 0,
