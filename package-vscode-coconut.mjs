@@ -207,15 +207,10 @@ async function syncOfficialChanges() {
 	console.log("Official repository sync completed and pushed to fork.")
 }
 
-async function installIfMissing(env) {
-	if (!(await exists(path.join(vscodeDir, "node_modules")))) {
-		const installMode = (await exists(path.join(vscodeDir, "package-lock.json"))) ? "ci" : "install"
-		await run(commandName("npm"), [installMode], { cwd: vscodeDir, env })
-	}
-
-	if (!(await exists(path.join(webviewDir, "node_modules")))) {
-		const installMode = (await exists(path.join(webviewDir, "package-lock.json"))) ? "ci" : "install"
-		await run(commandName("npm"), [installMode], { cwd: webviewDir, env })
+async function installDependencies(env) {
+	for (const directory of [vscodeDir, webviewDir]) {
+		const installMode = (await exists(path.join(directory, "package-lock.json"))) ? "ci" : "install"
+		await run(commandName("npm"), [installMode], { cwd: directory, env })
 	}
 }
 
@@ -307,7 +302,7 @@ async function main() {
 		console.log(`Version:        ${originalPackage.version} (from source package.json after upstream sync)`)
 
 		await mkdir(outputDir, { recursive: true })
-		await installIfMissing(env)
+		await installDependencies(env)
 
 		await run(commandName("npm"), ["run", "package"], { cwd: vscodeDir, env })
 		await createStagingPackage(originalPackage)
