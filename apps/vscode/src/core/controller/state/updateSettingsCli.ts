@@ -50,6 +50,7 @@ export async function updateSettingsCli(
 				customPrompt,
 				planModeApiProvider,
 				actModeApiProvider,
+				toolUseFailureFallbackApiProvider,
 				// Fields requiring special logic (telemetry, merging, etc.)
 				telemetrySetting,
 				yoloModeToggled,
@@ -149,6 +150,16 @@ export async function updateSettingsCli(
 			if (actModeApiProvider !== undefined) {
 				const converted = convertProtoToApiProvider(actModeApiProvider);
 				controller.stateManager.setGlobalState("actModeApiProvider", converted);
+			}
+
+			if (toolUseFailureFallbackApiProvider !== undefined) {
+				const converted = convertProtoToApiProvider(
+					toolUseFailureFallbackApiProvider,
+				);
+				controller.stateManager.setGlobalState(
+					"toolUseFailureFallbackApiProvider",
+					converted,
+				);
 			}
 
 			if (controller.task) {

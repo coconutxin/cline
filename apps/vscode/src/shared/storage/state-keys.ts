@@ -236,6 +236,9 @@ const API_HANDLER_SETTINGS_FIELDS = {
 	// Model-specific settings
 	planModeApiProvider: { default: DEFAULT_API_PROVIDER as ApiProvider },
 	actModeApiProvider: { default: DEFAULT_API_PROVIDER as ApiProvider },
+	toolUseFailureFallbackEnabled: { default: false as boolean },
+	toolUseFailureFallbackApiProvider: { default: undefined as ApiProvider | undefined },
+	toolUseFailureFallbackApiModelId: { default: undefined as string | undefined },
 
 	// Deprecated model settings
 	hicapModelId: { default: undefined as string | undefined },

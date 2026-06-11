@@ -514,6 +514,11 @@ export function convertApiConfigurationToProto(config: ApiConfiguration): ProtoA
 		aihubmixAppCode: config.aihubmixAppCode,
 		hicapApiKey: config.hicapApiKey,
 		hicapModelId: config.hicapModelId,
+		toolUseFailureFallbackEnabled: config.toolUseFailureFallbackEnabled,
+		toolUseFailureFallbackApiProvider: config.toolUseFailureFallbackApiProvider
+			? convertApiProviderToProto(config.toolUseFailureFallbackApiProvider)
+			: undefined,
+		toolUseFailureFallbackApiModelId: config.toolUseFailureFallbackApiModelId,
 
 		// Plan mode configurations
 		planModeApiProvider: config.planModeApiProvider ? convertApiProviderToProto(config.planModeApiProvider) : undefined,
@@ -694,6 +699,12 @@ export function convertProtoToApiConfiguration(protoConfig: ProtoApiConfiguratio
 		hicapModelId: protoConfig.hicapModelId,
 		nousResearchApiKey: protoConfig.nousResearchApiKey,
 		clineApiKey: protoConfig.clineApiKey,
+		toolUseFailureFallbackEnabled: protoConfig.toolUseFailureFallbackEnabled,
+		toolUseFailureFallbackApiProvider:
+			protoConfig.toolUseFailureFallbackApiProvider !== undefined
+				? convertProtoToApiProvider(protoConfig.toolUseFailureFallbackApiProvider)
+				: undefined,
+		toolUseFailureFallbackApiModelId: protoConfig.toolUseFailureFallbackApiModelId,
 
 		// Plan mode configurations
 		planModeApiProvider:

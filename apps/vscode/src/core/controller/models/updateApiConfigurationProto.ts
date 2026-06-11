@@ -168,6 +168,12 @@ export async function updateApiConfigurationProto(
 			actModeReasoningEffort: protoApiConfiguration.actModeReasoningEffort as
 				| OpenaiReasoningEffort
 				| undefined,
+			toolUseFailureFallbackApiProvider:
+				protoApiConfiguration.toolUseFailureFallbackApiProvider !== undefined
+					? convertProtoToApiProvider(
+							protoApiConfiguration.toolUseFailureFallbackApiProvider,
+						)
+					: undefined,
 		};
 
 		// Update the API configuration in storage

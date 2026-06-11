@@ -689,8 +689,8 @@ export const ChatRowContent = memo(
 										<ChevronRightIcon className="my-0.5 shrink-0 size-4" />
 									</div>
 								)}
-								</div>
 							</div>
+						</div>
 					)
 				case "webFetch":
 					return (
@@ -1084,37 +1084,62 @@ export const ChatRowContent = memo(
 								</div>
 							</div>
 						)
-					case "error_retry":
-						{
-							const retryInfo = safeJsonParse<{
-								retrySource?: "mistake_limit"
-								retrySuppressed?: "after_user_feedback"
-								attempt?: number
-								maxAttempts?: number
-								delaySeconds?: number
-								failed?: boolean
-								errorMessage?: string
-							} | null>(message.text, null, "error_retry")
-							if (!retryInfo) {
-								return (
-									<div className="text-foreground">
-										<MarkdownRow markdown={message.text} />
-									</div>
-								)
-							}
-							const { attempt, maxAttempts, delaySeconds, failed, errorMessage, retrySource, retrySuppressed } = retryInfo
-							const isFailed = failed === true
-							const normalizedErrorMessage = errorMessage?.toLowerCase() ?? ""
-							const isMistakeLimitRetry =
-								retrySource === "mistake_limit" ||
+					case "error_retry": {
+						const retryInfo = safeJsonParse<{
+							retrySource?: "mistake_limit" | "mistake_limit_fallback"
+							retrySuppressed?: "after_user_feedback"
+							attempt?: number
+							maxAttempts?: number
+							delaySeconds?: number
+							failed?: boolean
+							errorMessage?: string
+							primaryProviderId?: string
+							primaryModelId?: string
+							fallbackProviderId?: string
+							fallbackModelId?: string
+						} | null>(message.text, null, "error_retry")
+						if (!retryInfo) {
+							return (
+								<div className="text-foreground">
+									<MarkdownRow markdown={message.text} />
+								</div>
+							)
+						}
+						const {
+							attempt,
+							maxAttempts,
+							delaySeconds,
+							failed,
+							errorMessage,
+							retrySource,
+							retrySuppressed,
+							primaryProviderId,
+							primaryModelId,
+							fallbackProviderId,
+							fallbackModelId,
+						} = retryInfo
+						const isFailed = failed === true
+						const normalizedErrorMessage = errorMessage?.toLowerCase() ?? ""
+						const isFallbackRetry = retrySource === "mistake_limit_fallback"
+						const isMistakeLimitRetry =
+							!isFallbackRetry &&
+							(retrySource === "mistake_limit" ||
 								normalizedErrorMessage.includes("consecutive mistake limit") ||
 								normalizedErrorMessage.includes("failure in cline's thought process") ||
-								normalizedErrorMessage.includes("inability to use a tool properly")
-							const wasMistakeLimitRetrySuppressed =
-								retrySuppressed === "after_user_feedback" ||
-								normalizedErrorMessage.includes("after your guidance") ||
-								normalizedErrorMessage.includes("after user guidance")
-							const title = isMistakeLimitRetry
+								normalizedErrorMessage.includes("inability to use a tool properly"))
+						const wasMistakeLimitRetrySuppressed =
+							retrySuppressed === "after_user_feedback" ||
+							normalizedErrorMessage.includes("after your guidance") ||
+							normalizedErrorMessage.includes("after user guidance")
+						const primaryModelLabel =
+							[primaryProviderId, primaryModelId].filter(Boolean).join("/") || "the primary model"
+						const fallbackModelLabel =
+							[fallbackProviderId, fallbackModelId].filter(Boolean).join("/") || "the fallback model"
+						const title = isFallbackRetry
+							? isFailed
+								? "Fallback Model Also Failed"
+								: "Switching to Fallback Model"
+							: isMistakeLimitRetry
 								? isFailed
 									? "Consecutive Mistake Recovery Failed"
 									: "Recovering from Consecutive Mistakes"
@@ -1122,54 +1147,64 @@ export const ChatRowContent = memo(
 									? "Auto-Retry Failed"
 									: "Auto-Retry in Progress"
 
-							return (
-								<div className="flex flex-col gap-2">
-									{errorMessage && (
-										<p className="m-0 whitespace-pre-wrap text-error wrap-anywhere text-xs">{errorMessage}</p>
-									)}
-									<div className="flex flex-col bg-quote p-0 rounded-[3px] text-[12px] p-3">
-										<div className="flex items-center mb-1">
-											{isFailed && !isRequestInProgress ? (
-												<TriangleAlertIcon className="mr-2 size-2" />
-											) : (
-												<RefreshCwIcon className="mr-2 size-2 animate-spin" />
-											)}
-											<span className="font-medium text-foreground">
-												{title}
+						return (
+							<div className="flex flex-col gap-2">
+								{errorMessage && (
+									<p className="m-0 whitespace-pre-wrap text-error wrap-anywhere text-xs">{errorMessage}</p>
+								)}
+								<div className="flex flex-col bg-quote p-0 rounded-[3px] text-[12px] p-3">
+									<div className="flex items-center mb-1">
+										{isFailed && !isRequestInProgress ? (
+											<TriangleAlertIcon className="mr-2 size-2" />
+										) : (
+											<RefreshCwIcon className="mr-2 size-2 animate-spin" />
+										)}
+										<span className="font-medium text-foreground">{title}</span>
+									</div>
+									<div className="text-foreground opacity-80">
+										{isFallbackRetry && isFailed ? (
+											<span>
+												The fallback model <strong>{fallbackModelLabel}</strong> also failed to use a
+												required tool or call attempt_completion after recovery attempts. The task has
+												been stopped.
 											</span>
-										</div>
-										<div className="text-foreground opacity-80">
-											{isMistakeLimitRetry && isFailed && wasMistakeLimitRetrySuppressed ? (
-												<span>
-													Cline still did not use a tool after your guidance. No additional automatic
-													recovery attempts were started.
-												</span>
-											) : isMistakeLimitRetry && isFailed ? (
-												<span>
-													Cline could not recover from consecutive mistakes after <strong>{maxAttempts}</strong>{" "}
-													automatic attempts. User guidance is required.
-												</span>
-											) : isMistakeLimitRetry ? (
-												<span>
-													Recovery attempt <strong>{attempt}</strong> of <strong>{maxAttempts}</strong> - retrying
-													in {delaySeconds} seconds...
-												</span>
-											) : isFailed ? (
-												<span>
-													Auto-retry failed after <strong>{maxAttempts}</strong> attempts. Manual
-													intervention required.
-												</span>
-											) : (
-												<span>
-													Attempt <strong>{attempt}</strong> of <strong>{maxAttempts}</strong> -
-													Retrying in {delaySeconds} seconds...
-												</span>
-											)}
-										</div>
+										) : isFallbackRetry ? (
+											<span>
+												Cline is temporarily switching this task from <strong>{primaryModelLabel}</strong>{" "}
+												to fallback model <strong>{fallbackModelLabel}</strong> because the primary model
+												could not recover from consecutive tool-use mistakes.
+											</span>
+										) : isMistakeLimitRetry && isFailed && wasMistakeLimitRetrySuppressed ? (
+											<span>
+												Cline still did not use a tool after your guidance. No additional automatic
+												recovery attempts were started.
+											</span>
+										) : isMistakeLimitRetry && isFailed ? (
+											<span>
+												Cline could not recover from consecutive mistakes after{" "}
+												<strong>{maxAttempts}</strong> automatic attempts. User guidance is required.
+											</span>
+										) : isMistakeLimitRetry ? (
+											<span>
+												Recovery attempt <strong>{attempt}</strong> of <strong>{maxAttempts}</strong> -
+												retrying in {delaySeconds} seconds...
+											</span>
+										) : isFailed ? (
+											<span>
+												Auto-retry failed after <strong>{maxAttempts}</strong> attempts. Manual
+												intervention required.
+											</span>
+										) : (
+											<span>
+												Attempt <strong>{attempt}</strong> of <strong>{maxAttempts}</strong> - Retrying in{" "}
+												{delaySeconds} seconds...
+											</span>
+										)}
 									</div>
 								</div>
-							)
-						}
+							</div>
+						)
+					}
 					case "hook_status":
 						return <HookMessage CommandOutput={CommandOutputContent} message={message} />
 					case "hook_output_stream":
@@ -1261,12 +1296,12 @@ export const ChatRowContent = memo(
 						{
 							const parsedMessage = safeJsonParse<ClineAskQuestion | null>(message.text, null, "followup ask")
 							if (parsedMessage) {
-							question = parsedMessage.question
-							options = parsedMessage.options
-							selected = parsedMessage.selected
+								question = parsedMessage.question
+								options = parsedMessage.options
+								selected = parsedMessage.selected
 							} else {
-							// legacy messages would pass question directly
-							question = message.text
+								// legacy messages would pass question directly
+								question = message.text
 							}
 						}
 
@@ -1349,12 +1384,12 @@ export const ChatRowContent = memo(
 								"plan_mode_respond ask",
 							)
 							if (parsedMessage) {
-							response = parsedMessage.response
-							options = parsedMessage.options
-							selected = parsedMessage.selected
+								response = parsedMessage.response
+								options = parsedMessage.options
+								selected = parsedMessage.selected
 							} else {
-							// legacy messages would pass response directly
-							response = message.text
+								// legacy messages would pass response directly
+								response = message.text
 							}
 						}
 						return (

@@ -100,6 +100,7 @@ export async function updateApiConfiguration(
 		const options: Partial<ApiHandlerOptions> & {
 			planModeApiProvider?: ApiProvider;
 			actModeApiProvider?: ApiProvider;
+			toolUseFailureFallbackApiProvider?: ApiProvider;
 		} = {};
 		if (protoOptions && maskOptionsFields.size > 0) {
 			// Validate all masked fields exist
@@ -124,6 +125,9 @@ export async function updateApiConfiguration(
 						options.planModeApiProvider = convertProtoToApiProvider(value);
 					} else if (key === "actModeApiProvider") {
 						options.actModeApiProvider = convertProtoToApiProvider(value);
+					} else if (key === "toolUseFailureFallbackApiProvider") {
+						options.toolUseFailureFallbackApiProvider =
+							convertProtoToApiProvider(value);
 					} else {
 						options[key as keyof ApiHandlerOptions] = value;
 					}

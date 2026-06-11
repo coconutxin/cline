@@ -287,6 +287,9 @@ message Settings {
   optional OpenRouterModelInfo act_mode_cline_model_info = 181;
   optional bool show_feature_tips = 182;
   optional bool lazy_teammate_mode_enabled = 183;
+  optional bool tool_use_failure_fallback_enabled = 184;
+  optional ApiProvider tool_use_failure_fallback_api_provider = 185;
+  optional string tool_use_failure_fallback_api_model_id = 186;
 }
 
 message State {

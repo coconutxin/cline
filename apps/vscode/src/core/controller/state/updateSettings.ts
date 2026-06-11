@@ -48,6 +48,12 @@ export async function updateSettings(
 				actModeApiProvider: protoApiConfiguration.actModeApiProvider
 					? convertProtoToApiProvider(protoApiConfiguration.actModeApiProvider)
 					: undefined,
+				toolUseFailureFallbackApiProvider:
+					protoApiConfiguration.toolUseFailureFallbackApiProvider !== undefined
+						? convertProtoToApiProvider(
+								protoApiConfiguration.toolUseFailureFallbackApiProvider,
+							)
+						: undefined,
 				planModeReasoningEffort:
 					protoApiConfiguration.planModeReasoningEffort as
 						| OpenaiReasoningEffort
