@@ -40,7 +40,7 @@ import { MouseEvent, memo, useCallback, useEffect, useMemo, useRef, useState } f
 import { useSize } from "react-use"
 import { OptionsButtons } from "@/components/chat/OptionsButtons"
 import { CheckmarkControl } from "@/components/common/CheckmarkControl"
-import { WithCopyButton } from "@/components/common/CopyButton"
+import { CopyButton, WithCopyButton } from "@/components/common/CopyButton"
 import McpResponseDisplay from "@/components/mcp/chat-display/McpResponseDisplay"
 import McpResourceRow from "@/components/mcp/configuration/tabs/installed/server-row/McpResourceRow"
 import McpToolRow from "@/components/mcp/configuration/tabs/installed/server-row/McpToolRow"
@@ -634,38 +634,63 @@ export const ChatRowContent = memo(
 								<span className="font-bold">Cline is condensing the conversation:</span>
 							</div>
 							<div className="bg-code overflow-hidden border border-editor-group-border rounded-[3px]">
-								<div
-									aria-label={isExpanded ? "Collapse summary" : "Expand summary"}
-									className="text-description py-2 px-2.5 cursor-pointer select-none"
-									onClick={handleToggle}
-									onKeyDown={(e) => {
-										if (e.key === "Enter" || e.key === " ") {
-											e.preventDefault()
-											e.stopPropagation()
-											handleToggle()
-										}
-									}}
-									tabIndex={0}>
-									{isExpanded ? (
-										<div>
-											<div className="flex items-center mb-2">
-												<span className="font-bold mr-1">Summary:</span>
-												<div className="grow" />
-												<ChevronDownIcon className="my-0.5 shrink-0 size-4" />
+								{isExpanded ? (
+									<div className="text-description">
+										<div
+											aria-label="Collapse summary"
+											className="flex items-center py-2 px-2.5 cursor-pointer select-none"
+											onClick={handleToggle}
+											onKeyDown={(e) => {
+												if (e.key === "Enter" || e.key === " ") {
+													e.preventDefault()
+													e.stopPropagation()
+													handleToggle()
+												}
+											}}
+											tabIndex={0}>
+											<span className="font-bold mr-1">Summary:</span>
+											<div className="grow" />
+											<div
+												className="mr-1 shrink-0"
+												onClick={(e) => e.stopPropagation()}
+												onKeyDown={(e) => e.stopPropagation()}>
+												<CopyButton ariaLabel="Copy summary" textToCopy={tool.content || ""} />
 											</div>
-											<span className="ph-no-capture break-words whitespace-pre-wrap">{tool.content}</span>
+											<ChevronDownIcon className="my-0.5 shrink-0 size-4" />
 										</div>
-									) : (
-										<div className="flex items-center">
-											<span className="ph-no-capture whitespace-nowrap overflow-hidden text-ellipsis text-left flex-1 mr-2 [direction:rtl]">
-												{tool.content + "\u200E"}
+										<div className="px-2.5 pb-2">
+											<span className="ph-no-capture break-words whitespace-pre-wrap select-text">
+												{tool.content}
 											</span>
-											<ChevronRightIcon className="my-0.5 shrink-0 size-4" />
 										</div>
-									)}
+									</div>
+								) : (
+									<div
+										aria-label="Expand summary"
+										className="text-description flex items-center py-2 px-2.5 cursor-pointer select-none"
+										onClick={handleToggle}
+										onKeyDown={(e) => {
+											if (e.key === "Enter" || e.key === " ") {
+												e.preventDefault()
+												e.stopPropagation()
+												handleToggle()
+											}
+										}}
+										tabIndex={0}>
+										<span className="ph-no-capture whitespace-nowrap overflow-hidden text-ellipsis text-left flex-1 mr-2 [direction:rtl]">
+											{(tool.content || "") + "\u200E"}
+										</span>
+										<div
+											className="mr-1 shrink-0"
+											onClick={(e) => e.stopPropagation()}
+											onKeyDown={(e) => e.stopPropagation()}>
+											<CopyButton ariaLabel="Copy summary" textToCopy={tool.content || ""} />
+										</div>
+										<ChevronRightIcon className="my-0.5 shrink-0 size-4" />
+									</div>
+								)}
 								</div>
 							</div>
-						</div>
 					)
 				case "webFetch":
 					return (
