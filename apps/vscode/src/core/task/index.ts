@@ -2392,7 +2392,10 @@ export class Task {
 				return true // didEndLoop = true, signals task completion/failure
 			}
 
-			if (this.taskState.mistakeLimitAutoRetryAttempts < 3) {
+			const shouldAutoRetryMistakeLimit =
+				!this.taskState.suppressMistakeLimitAutoRetry && this.taskState.mistakeLimitAutoRetryAttempts < 3
+
+			if (shouldAutoRetryMistakeLimit) {
 				this.taskState.mistakeLimitAutoRetryAttempts++
 
 				// Calculate delay: 2s, 4s, 8s
@@ -2415,15 +2418,21 @@ export class Task {
 				resetMistakeLimitState()
 				await setTimeoutPromise(delay)
 			} else {
+				const didSuppressAutoRetryAfterFeedback = this.taskState.suppressMistakeLimitAutoRetry
+				const errorMessage = didSuppressAutoRetryAfterFeedback
+					? `Cline still did not use a tool after your guidance. No additional automatic recovery attempts will be started. ${mistakeLimitMessage}`
+					: mistakeLimitMessage
+
 				await this.say(
 					"error_retry",
 					JSON.stringify({
 						retrySource: "mistake_limit",
+						retrySuppressed: didSuppressAutoRetryAfterFeedback ? "after_user_feedback" : undefined,
 						attempt: 3,
 						maxAttempts: 3,
 						delaySeconds: 0,
 						failed: true,
-						errorMessage: mistakeLimitMessage,
+						errorMessage,
 					}),
 				)
 
@@ -2435,7 +2444,8 @@ export class Task {
 					})
 				}
 				const { response, text, images, files } = await this.ask("mistake_limit_reached", mistakeLimitMessage)
-				if (response === "messageResponse") {
+				const didReceiveMistakeLimitFeedback = response === "messageResponse"
+				if (didReceiveMistakeLimitFeedback) {
 					// Display the user's message in the chat UI
 					await this.say("user_feedback", text, images, files)
 
@@ -2464,6 +2474,7 @@ export class Task {
 					userContent = feedbackUserContent
 				}
 				this.taskState.mistakeLimitAutoRetryAttempts = 0
+				this.taskState.suppressMistakeLimitAutoRetry = didReceiveMistakeLimitFeedback
 				this.taskState.autoRetryAttempts = 0
 				resetMistakeLimitState()
 			}
@@ -3245,9 +3256,12 @@ export class Task {
 						type: "text",
 						text: formatResponse.noToolsUsed(this.useNativeToolCalls),
 					})
-					this.taskState.consecutiveMistakeCount++
+					this.taskState.consecutiveMistakeCount = this.taskState.suppressMistakeLimitAutoRetry
+						? maxConsecutiveMistakes
+						: this.taskState.consecutiveMistakeCount + 1
 				} else if (this.taskState.consecutiveMistakeCount === 0) {
 					this.taskState.mistakeLimitAutoRetryAttempts = 0
+					this.taskState.suppressMistakeLimitAutoRetry = false
 				}
 
 				// Reset auto-retry counter for each new API request

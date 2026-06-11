@@ -1088,6 +1088,7 @@ export const ChatRowContent = memo(
 						{
 							const retryInfo = safeJsonParse<{
 								retrySource?: "mistake_limit"
+								retrySuppressed?: "after_user_feedback"
 								attempt?: number
 								maxAttempts?: number
 								delaySeconds?: number
@@ -1101,9 +1102,18 @@ export const ChatRowContent = memo(
 									</div>
 								)
 							}
-							const { attempt, maxAttempts, delaySeconds, failed, errorMessage, retrySource } = retryInfo
+							const { attempt, maxAttempts, delaySeconds, failed, errorMessage, retrySource, retrySuppressed } = retryInfo
 							const isFailed = failed === true
-							const isMistakeLimitRetry = retrySource === "mistake_limit"
+							const normalizedErrorMessage = errorMessage?.toLowerCase() ?? ""
+							const isMistakeLimitRetry =
+								retrySource === "mistake_limit" ||
+								normalizedErrorMessage.includes("consecutive mistake limit") ||
+								normalizedErrorMessage.includes("failure in cline's thought process") ||
+								normalizedErrorMessage.includes("inability to use a tool properly")
+							const wasMistakeLimitRetrySuppressed =
+								retrySuppressed === "after_user_feedback" ||
+								normalizedErrorMessage.includes("after your guidance") ||
+								normalizedErrorMessage.includes("after user guidance")
 							const title = isMistakeLimitRetry
 								? isFailed
 									? "Consecutive Mistake Recovery Failed"
@@ -1129,7 +1139,12 @@ export const ChatRowContent = memo(
 											</span>
 										</div>
 										<div className="text-foreground opacity-80">
-											{isMistakeLimitRetry && isFailed ? (
+											{isMistakeLimitRetry && isFailed && wasMistakeLimitRetrySuppressed ? (
+												<span>
+													Cline still did not use a tool after your guidance. No additional automatic
+													recovery attempts were started.
+												</span>
+											) : isMistakeLimitRetry && isFailed ? (
 												<span>
 													Cline could not recover from consecutive mistakes after <strong>{maxAttempts}</strong>{" "}
 													automatic attempts. User guidance is required.
