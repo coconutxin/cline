@@ -1,32 +1,41 @@
-import { ModelInfo, OpenAiCodexModelId, openAiCodexDefaultModelId, openAiCodexModels } from "@shared/api"
-import { normalizeOpenaiReasoningEffort } from "@shared/storage/types"
-import OpenAI from "openai"
-import type { ChatCompletionTool } from "openai/resources/chat/completions"
-import * as os from "os"
-import { MessageEvent as UndiciMessageEvent, WebSocket as UndiciWebSocket } from "undici"
-import { v7 as uuidv7 } from "uuid"
-import { openAiCodexOAuthManager } from "@/integrations/openai-codex/oauth"
-import { buildExternalBasicHeaders } from "@/services/EnvUtils"
-import { featureFlagsService } from "@/services/feature-flags"
-import { ClineStorageMessage } from "@/shared/messages/content"
-import { fetch } from "@/shared/net"
-import { ApiFormat } from "@/shared/proto/cline/models"
-import { FeatureFlag } from "@/shared/services/feature-flags/feature-flags"
-import { Logger } from "@/shared/services/Logger"
-import { ApiHandler, CommonApiHandlerOptions } from "../"
-import { convertToOpenAIResponsesInput } from "../transform/openai-response-format"
-import { ApiStream, ApiStreamUsageChunk } from "../transform/stream"
+import {
+	type ModelInfo,
+	type OpenAiCodexModelId,
+	openAiCodexDefaultModelId,
+	openAiCodexModels,
+} from "@shared/api";
+import { normalizeOpenaiReasoningEffort } from "@shared/storage/types";
+import OpenAI from "openai";
+import type { ChatCompletionTool } from "openai/resources/chat/completions";
+import * as os from "os";
+import {
+	type MessageEvent as UndiciMessageEvent,
+	WebSocket as UndiciWebSocket,
+} from "undici";
+import { v7 as uuidv7 } from "uuid";
+import { openAiCodexOAuthManager } from "@/integrations/openai-codex/oauth";
+import { buildExternalBasicHeaders } from "@/services/EnvUtils";
+import { featureFlagsService } from "@/services/feature-flags";
+import type { ClineStorageMessage } from "@/shared/messages/content";
+import { fetch } from "@/shared/net";
+import { ApiFormat } from "@/shared/proto/cline/models";
+import { FeatureFlag } from "@/shared/services/feature-flags/feature-flags";
+import { Logger } from "@/shared/services/Logger";
+import type { ApiHandler, CommonApiHandlerOptions } from "../";
+import { convertToOpenAIResponsesInput } from "../transform/openai-response-format";
+import type { ApiStream, ApiStreamUsageChunk } from "../transform/stream";
 
 /**
  * OpenAI Codex base URL for API requests
  * Routes to chatgpt.com/backend-api/codex
  */
-const CODEX_API_BASE_URL = "https://chatgpt.com/backend-api/codex"
-const CODEX_RESPONSES_WEBSOCKET_URL = "wss://chatgpt.com/backend-api/codex/responses"
+const CODEX_API_BASE_URL = "https://chatgpt.com/backend-api/codex";
+const CODEX_RESPONSES_WEBSOCKET_URL =
+	"wss://chatgpt.com/backend-api/codex/responses";
 
 interface OpenAiCodexHandlerOptions extends CommonApiHandlerOptions {
-	reasoningEffort?: string
-	apiModelId?: string
+	reasoningEffort?: string;
+	apiModelId?: string;
 }
 
 /**
@@ -40,49 +49,66 @@ interface OpenAiCodexHandlerOptions extends CommonApiHandlerOptions {
  * - Custom headers for Codex backend
  */
 export class OpenAiCodexHandler implements ApiHandler {
-	private options: OpenAiCodexHandlerOptions
-	private client?: OpenAI
-	private responsesWs: UndiciWebSocket | undefined
-	private websocketRequestInFlight = false
+	private options: OpenAiCodexHandlerOptions;
+	private client?: OpenAI;
+	private responsesWs: UndiciWebSocket | undefined;
+	private websocketRequestInFlight = false;
 	// Session ID for the Codex API (persists for the lifetime of the handler)
-	private readonly sessionId: string
+	private readonly sessionId: string;
 	// Abort controller for cancelling ongoing requests
-	private abortController?: AbortController
+	private abortController?: AbortController;
 	// Track tool call identity for streaming
-	private pendingToolCallId: string | undefined
-	private pendingToolCallName: string | undefined
+	private pendingToolCallId: string | undefined;
+	private pendingToolCallName: string | undefined;
 
 	constructor(options: OpenAiCodexHandlerOptions) {
-		this.options = options
-		this.sessionId = uuidv7()
+		this.options = options;
+		this.sessionId = uuidv7();
 	}
 
-	private normalizeUsage(usage: any, _model: { id: string; info: ModelInfo }): ApiStreamUsageChunk | undefined {
+	private normalizeUsage(
+		usage: any,
+		_model: { id: string; info: ModelInfo },
+	): ApiStreamUsageChunk | undefined {
 		if (!usage) {
-			return undefined
+			return undefined;
 		}
 
-		const inputDetails = usage.input_tokens_details ?? usage.prompt_tokens_details
+		const inputDetails =
+			usage.input_tokens_details ?? usage.prompt_tokens_details;
 
-		const hasCachedTokens = typeof inputDetails?.cached_tokens === "number"
-		const hasCacheMissTokens = typeof inputDetails?.cache_miss_tokens === "number"
-		const cachedFromDetails = hasCachedTokens ? inputDetails.cached_tokens : 0
-		const missFromDetails = hasCacheMissTokens ? inputDetails.cache_miss_tokens : 0
+		const hasCachedTokens = typeof inputDetails?.cached_tokens === "number";
+		const hasCacheMissTokens =
+			typeof inputDetails?.cache_miss_tokens === "number";
+		const cachedFromDetails = hasCachedTokens ? inputDetails.cached_tokens : 0;
+		const missFromDetails = hasCacheMissTokens
+			? inputDetails.cache_miss_tokens
+			: 0;
 
-		let totalInputTokens = usage.input_tokens ?? usage.prompt_tokens ?? 0
-		if (totalInputTokens === 0 && inputDetails && (cachedFromDetails > 0 || missFromDetails > 0)) {
-			totalInputTokens = cachedFromDetails + missFromDetails
+		let totalInputTokens = usage.input_tokens ?? usage.prompt_tokens ?? 0;
+		if (
+			totalInputTokens === 0 &&
+			inputDetails &&
+			(cachedFromDetails > 0 || missFromDetails > 0)
+		) {
+			totalInputTokens = cachedFromDetails + missFromDetails;
 		}
 
-		const totalOutputTokens = usage.output_tokens ?? usage.completion_tokens ?? 0
-		const cacheWriteTokens = usage.cache_creation_input_tokens ?? usage.cache_write_tokens ?? 0
+		const totalOutputTokens =
+			usage.output_tokens ?? usage.completion_tokens ?? 0;
+		const cacheWriteTokens =
+			usage.cache_creation_input_tokens ?? usage.cache_write_tokens ?? 0;
 		const cacheReadTokens =
-			usage.cache_read_input_tokens ?? usage.cache_read_tokens ?? usage.cached_tokens ?? cachedFromDetails ?? 0
+			usage.cache_read_input_tokens ??
+			usage.cache_read_tokens ??
+			usage.cached_tokens ??
+			cachedFromDetails ??
+			0;
 
 		const reasoningTokens =
 			typeof usage.output_tokens_details?.reasoning_tokens === "number"
 				? usage.output_tokens_details.reasoning_tokens
-				: undefined
+				: undefined;
 
 		// Subscription-based: no per-token costs
 		const out: ApiStreamUsageChunk = {
@@ -93,60 +119,109 @@ export class OpenAiCodexHandler implements ApiHandler {
 			cacheReadTokens,
 			...(typeof reasoningTokens === "number" ? { reasoningTokens } : {}),
 			totalCost: 0, // Subscription-based pricing
-		}
-		return out
+		};
+		return out;
 	}
 
-	async *createMessage(systemPrompt: string, messages: ClineStorageMessage[], tools?: ChatCompletionTool[]): ApiStream {
-		const model = this.getModel()
+	async *createMessage(
+		systemPrompt: string,
+		messages: ClineStorageMessage[],
+		tools?: ChatCompletionTool[],
+	): ApiStream {
+		const model = this.getModel();
 
 		// Reset state for this request
-		this.pendingToolCallId = undefined
-		this.pendingToolCallName = undefined
+		this.pendingToolCallId = undefined;
+		this.pendingToolCallName = undefined;
 
 		// Get access token from OAuth manager
-		let accessToken = await openAiCodexOAuthManager.getAccessToken()
+		let accessToken = await openAiCodexOAuthManager.getAccessToken();
 		if (!accessToken) {
-			throw new Error("Not authenticated with OpenAI Codex. Please sign in using the OpenAI Codex OAuth flow in settings.")
+			throw new Error(
+				"Not authenticated with OpenAI Codex. Please sign in using the OpenAI Codex OAuth flow in settings.",
+			);
 		}
-		const useWebsocketMode = this.useWebsocketMode(model.info.apiFormat)
-		const { input, previousResponseId } = convertToOpenAIResponsesInput(messages, { usePreviousResponseId: useWebsocketMode })
-		const usePreviousResponseId = useWebsocketMode && !!previousResponseId
+		const useWebsocketMode = this.useWebsocketMode(model.info.apiFormat);
+		const { input, previousResponseId } = convertToOpenAIResponsesInput(
+			messages,
+			{ usePreviousResponseId: useWebsocketMode },
+		);
+		const usePreviousResponseId = useWebsocketMode && !!previousResponseId;
 
 		// Build request body
-		const requestBody = this.buildRequestBody(model, input, systemPrompt, tools, previousResponseId)
-		const fallbackRequestBody = this.buildRequestBody(model, input, systemPrompt, tools)
+		const requestBody = this.buildRequestBody(
+			model,
+			input,
+			systemPrompt,
+			tools,
+			previousResponseId,
+		);
+		const fallbackRequestBody = this.buildRequestBody(
+			model,
+			input,
+			systemPrompt,
+			tools,
+		);
 
 		// Make the request with retry on auth failure
 		for (let attempt = 0; attempt < 2; attempt++) {
 			try {
-				yield* this.executeRequest(requestBody, fallbackRequestBody, model, accessToken, usePreviousResponseId)
-				return
+				yield* this.executeRequest(
+					requestBody,
+					fallbackRequestBody,
+					model,
+					accessToken,
+					usePreviousResponseId,
+				);
+				return;
 			} catch (error) {
-				const message = error instanceof Error ? error.message : String(error)
-				const isAuthFailure = /unauthorized|invalid token|not authenticated|authentication|401/i.test(message)
+				const message = error instanceof Error ? error.message : String(error);
+				const isAuthFailure =
+					/unauthorized|invalid token|not authenticated|authentication|401/i.test(
+						message,
+					);
 
 				if (attempt === 0 && isAuthFailure) {
 					// Force refresh the token for retry
-					const refreshed = await openAiCodexOAuthManager.forceRefreshAccessToken()
+					const refreshed =
+						await openAiCodexOAuthManager.forceRefreshAccessToken();
 					if (!refreshed) {
 						throw new Error(
 							"Not authenticated with OpenAI Codex. Please sign in using the OpenAI Codex OAuth flow in settings.",
-						)
+						);
 					}
-					accessToken = refreshed
-					continue
+					accessToken = refreshed;
+					continue;
 				}
-				throw error
+				throw error;
 			}
 		}
 	}
 
 	private useWebsocketMode(apiFormat?: ApiFormat): boolean {
-		if (featureFlagsService.getBooleanFlagEnabled(FeatureFlag.OPENAI_RESPONSES_WEBSOCKET_MODE)) {
-			return apiFormat === ApiFormat.OPENAI_RESPONSES_WEBSOCKET_MODE
+		if (
+			featureFlagsService.getBooleanFlagEnabled(
+				FeatureFlag.OPENAI_RESPONSES_WEBSOCKET_MODE,
+			)
+		) {
+			if (this.hasProxyEnvironment()) {
+				Logger.log(
+					"OpenAI Codex websocket mode disabled because proxy environment variables are configured",
+				);
+				return false;
+			}
+			return apiFormat === ApiFormat.OPENAI_RESPONSES_WEBSOCKET_MODE;
 		}
-		return false
+		return false;
+	}
+
+	private hasProxyEnvironment(): boolean {
+		return !!(
+			process.env.HTTPS_PROXY ||
+			process.env.https_proxy ||
+			process.env.HTTP_PROXY ||
+			process.env.http_proxy
+		);
 	}
 
 	private buildRequestBody(
@@ -157,8 +232,10 @@ export class OpenAiCodexHandler implements ApiHandler {
 		previousResponseId?: string,
 	): any {
 		// Determine reasoning effort
-		const reasoningEffort = normalizeOpenaiReasoningEffort(this.options.reasoningEffort)
-		const includeReasoning = reasoningEffort !== "none"
+		const reasoningEffort = normalizeOpenaiReasoningEffort(
+			this.options.reasoningEffort,
+		);
+		const includeReasoning = reasoningEffort !== "none";
 
 		const body: any = {
 			model: model.id,
@@ -166,7 +243,9 @@ export class OpenAiCodexHandler implements ApiHandler {
 			stream: true,
 			store: false,
 			instructions: systemPrompt,
-			...(previousResponseId ? { previous_response_id: previousResponseId } : {}),
+			...(previousResponseId
+				? { previous_response_id: previousResponseId }
+				: {}),
 			...(includeReasoning ? { include: ["reasoning.encrypted_content"] } : {}),
 			...(includeReasoning
 				? {
@@ -176,7 +255,7 @@ export class OpenAiCodexHandler implements ApiHandler {
 						},
 					}
 				: {}),
-		}
+		};
 
 		// Add tools if provided
 		// Pass through strict value from tool (MCP/custom tools have strict: false, built-in tools default to true)
@@ -189,10 +268,10 @@ export class OpenAiCodexHandler implements ApiHandler {
 					description: tool.function.description,
 					parameters: tool.function.parameters,
 					strict: tool.function.strict ?? true,
-				}))
+				}));
 		}
 
-		return body
+		return body;
 	}
 
 	private async *executeRequest(
@@ -203,11 +282,11 @@ export class OpenAiCodexHandler implements ApiHandler {
 		useWebsocketMode: boolean,
 	): ApiStream {
 		// Create AbortController for cancellation
-		this.abortController = new AbortController()
+		this.abortController = new AbortController();
 
 		try {
 			// Get ChatGPT account ID for organization subscriptions
-			const accountId = await openAiCodexOAuthManager.getAccountId()
+			const accountId = await openAiCodexOAuthManager.getAccountId();
 
 			// Build Codex-specific headers
 			const codexHeaders: Record<string, string> = {
@@ -216,15 +295,24 @@ export class OpenAiCodexHandler implements ApiHandler {
 				"User-Agent": `cline/${process.env.npm_package_version || "1.0.0"} (${os.platform()} ${os.release()}; ${os.arch()}) node/${process.version.slice(1)}`,
 				...(accountId ? { "ChatGPT-Account-Id": accountId } : {}),
 				...buildExternalBasicHeaders(),
-			}
+			};
 
 			if (useWebsocketMode) {
 				try {
-					yield* this.createResponseStreamWebsocket(requestBody, fallbackRequestBody, accessToken, codexHeaders, model)
-					return
+					yield* this.createResponseStreamWebsocket(
+						requestBody,
+						fallbackRequestBody,
+						accessToken,
+						codexHeaders,
+						model,
+					);
+					return;
 				} catch (error) {
-					Logger.error("OpenAI Codex websocket mode failed, falling back to HTTP Responses API:", error)
-					this.closeResponsesWebsocket()
+					Logger.error(
+						"OpenAI Codex websocket mode failed, falling back to HTTP Responses API:",
+						error,
+					);
+					this.closeResponsesWebsocket();
 				}
 			}
 
@@ -237,32 +325,32 @@ export class OpenAiCodexHandler implements ApiHandler {
 						baseURL: CODEX_API_BASE_URL,
 						defaultHeaders: codexHeaders,
 						fetch, // Use shared fetch for proxy support
-					})
+					});
 
 				const stream = (await (client as any).responses.create(requestBody, {
 					signal: this.abortController.signal,
 					headers: codexHeaders,
-				})) as AsyncIterable<any>
+				})) as AsyncIterable<any>;
 
 				if (typeof (stream as any)?.[Symbol.asyncIterator] !== "function") {
-					throw new Error("OpenAI SDK did not return an AsyncIterable")
+					throw new Error("OpenAI SDK did not return an AsyncIterable");
 				}
 
 				for await (const event of stream) {
 					if (this.abortController.signal.aborted) {
-						break
+						break;
 					}
 
 					for await (const outChunk of this.processEvent(event, model)) {
-						yield outChunk
+						yield outChunk;
 					}
 				}
 			} catch (_sdkErr) {
 				// Fallback to manual SSE via fetch
-				yield* this.makeCodexRequest(requestBody, model, accessToken)
+				yield* this.makeCodexRequest(requestBody, model, accessToken);
 			}
 		} finally {
-			this.abortController = undefined
+			this.abortController = undefined;
 		}
 	}
 
@@ -274,51 +362,76 @@ export class OpenAiCodexHandler implements ApiHandler {
 		model: { id: string; info: ModelInfo },
 	): ApiStream {
 		try {
-			for await (const event of this.createResponseEventsViaWebsocket(primaryParams, accessToken, codexHeaders)) {
+			for await (const event of this.createResponseEventsViaWebsocket(
+				primaryParams,
+				accessToken,
+				codexHeaders,
+			)) {
 				if (this.abortController?.signal.aborted) {
-					return
+					return;
 				}
-				yield* this.processEvent(event, model)
+				yield* this.processEvent(event, model);
 			}
 		} catch (error) {
-			if (this.shouldRetryWebsocketWithFullContext(error, !!primaryParams.previous_response_id)) {
+			if (
+				this.shouldRetryWebsocketWithFullContext(
+					error,
+					!!primaryParams.previous_response_id,
+				)
+			) {
 				Logger.log(
 					"Retrying Codex websocket response with full context after previous_response_not_found or socket reset",
-				)
-				this.closeResponsesWebsocket()
-				for await (const event of this.createResponseEventsViaWebsocket(fallbackParams, accessToken, codexHeaders)) {
+				);
+				this.closeResponsesWebsocket();
+				for await (const event of this.createResponseEventsViaWebsocket(
+					fallbackParams,
+					accessToken,
+					codexHeaders,
+				)) {
 					if (this.abortController?.signal.aborted) {
-						return
+						return;
 					}
-					yield* this.processEvent(event, model)
+					yield* this.processEvent(event, model);
 				}
-				return
+				return;
 			}
-			throw error
+			throw error;
 		}
 	}
 
-	private shouldRetryWebsocketWithFullContext(error: unknown, hadPreviousResponseId: boolean): boolean {
+	private shouldRetryWebsocketWithFullContext(
+		error: unknown,
+		hadPreviousResponseId: boolean,
+	): boolean {
 		const errorCode =
-			typeof error === "object" && error && "code" in error && typeof (error as { code: unknown }).code === "string"
+			typeof error === "object" &&
+			error &&
+			"code" in error &&
+			typeof (error as { code: unknown }).code === "string"
 				? (error as { code: string }).code
-				: undefined
+				: undefined;
 
 		if (hadPreviousResponseId && errorCode === "previous_response_not_found") {
-			return true
+			return true;
 		}
 		if (errorCode === "websocket_closed" || errorCode === "websocket_error") {
-			return true
+			return true;
 		}
-		return false
+		return false;
 	}
 
-	private async ensureResponsesWebsocket(accessToken: string, codexHeaders: Record<string, string>): Promise<UndiciWebSocket> {
-		if (this.responsesWs && this.responsesWs.readyState === UndiciWebSocket.OPEN) {
-			return this.responsesWs
+	private async ensureResponsesWebsocket(
+		accessToken: string,
+		codexHeaders: Record<string, string>,
+	): Promise<UndiciWebSocket> {
+		if (
+			this.responsesWs &&
+			this.responsesWs.readyState === UndiciWebSocket.OPEN
+		) {
+			return this.responsesWs;
 		}
 
-		this.closeResponsesWebsocket()
+		this.closeResponsesWebsocket();
 
 		const ws = new UndiciWebSocket(CODEX_RESPONSES_WEBSOCKET_URL, {
 			headers: {
@@ -326,41 +439,46 @@ export class OpenAiCodexHandler implements ApiHandler {
 				"OpenAI-Beta": "responses_websockets=2026-02-06",
 				...codexHeaders,
 			},
-		})
+		});
 
 		await new Promise<void>((resolve, reject) => {
+			const timeout = setTimeout(() => {
+				cleanup();
+				reject(new Error("Timed out opening Codex Responses websocket"));
+			}, 10_000);
 			const cleanup = () => {
-				ws.removeEventListener("open", handleOpen)
-				ws.removeEventListener("error", handleError)
-				ws.removeEventListener("close", handleClose)
-			}
+				clearTimeout(timeout);
+				ws.removeEventListener("open", handleOpen);
+				ws.removeEventListener("error", handleError);
+				ws.removeEventListener("close", handleClose);
+			};
 			const handleOpen = () => {
-				cleanup()
-				resolve()
-			}
+				cleanup();
+				resolve();
+			};
 			const handleError = () => {
-				cleanup()
-				reject(new Error("Failed to open Codex Responses websocket"))
-			}
+				cleanup();
+				reject(new Error("Failed to open Codex Responses websocket"));
+			};
 			const handleClose = () => {
-				cleanup()
-				reject(new Error("Codex Responses websocket closed before opening"))
-			}
-			ws.addEventListener("open", handleOpen)
-			ws.addEventListener("error", handleError)
-			ws.addEventListener("close", handleClose)
-		})
+				cleanup();
+				reject(new Error("Codex Responses websocket closed before opening"));
+			};
+			ws.addEventListener("open", handleOpen);
+			ws.addEventListener("error", handleError);
+			ws.addEventListener("close", handleClose);
+		});
 
-		this.responsesWs = ws
-		return ws
+		this.responsesWs = ws;
+		return ws;
 	}
 
 	private closeResponsesWebsocket() {
 		if (this.responsesWs) {
 			try {
-				this.responsesWs.close()
+				this.responsesWs.close();
 			} catch {}
-			this.responsesWs = undefined
+			this.responsesWs = undefined;
 		}
 	}
 
@@ -370,85 +488,102 @@ export class OpenAiCodexHandler implements ApiHandler {
 		codexHeaders: Record<string, string>,
 	): AsyncGenerator<OpenAI.Responses.ResponseStreamEvent> {
 		if (this.websocketRequestInFlight) {
-			const error: Error & { code?: string } = new Error("Websocket response.create is already in progress")
-			error.code = "websocket_concurrency_limit"
-			throw error
+			const error: Error & { code?: string } = new Error(
+				"Websocket response.create is already in progress",
+			);
+			error.code = "websocket_concurrency_limit";
+			throw error;
 		}
 
-		const ws = await this.ensureResponsesWebsocket(accessToken, codexHeaders)
-		this.websocketRequestInFlight = true
+		const ws = await this.ensureResponsesWebsocket(accessToken, codexHeaders);
+		this.websocketRequestInFlight = true;
 
-		const eventQueue: OpenAI.Responses.ResponseStreamEvent[] = []
-		let resolver: (() => void) | undefined
-		let completed = false
-		let failure: (Error & { code?: string }) | undefined
+		const eventQueue: OpenAI.Responses.ResponseStreamEvent[] = [];
+		let resolver: (() => void) | undefined;
+		let completed = false;
+		let failure: (Error & { code?: string }) | undefined;
 
 		const wake = () => {
-			const next = resolver
-			resolver = undefined
-			next?.()
-		}
+			const next = resolver;
+			resolver = undefined;
+			next?.();
+		};
 
 		const handleMessage = (evt: UndiciMessageEvent) => {
 			try {
-				let raw = ""
+				let raw = "";
 				if (typeof evt.data === "string") {
-					raw = evt.data
+					raw = evt.data;
 				} else if (evt.data instanceof ArrayBuffer) {
-					raw = new TextDecoder().decode(new Uint8Array(evt.data))
+					raw = new TextDecoder().decode(new Uint8Array(evt.data));
 				} else if (ArrayBuffer.isView(evt.data)) {
-					raw = new TextDecoder().decode(new Uint8Array(evt.data.buffer, evt.data.byteOffset, evt.data.byteLength))
+					raw = new TextDecoder().decode(
+						new Uint8Array(
+							evt.data.buffer,
+							evt.data.byteOffset,
+							evt.data.byteLength,
+						),
+					);
 				} else {
-					raw = String(evt.data)
+					raw = String(evt.data);
 				}
 
-				const parsed = JSON.parse(raw)
+				const parsed = JSON.parse(raw);
 				if (parsed?.type === "error" && parsed?.error) {
-					const error: Error & { code?: string } = new Error(parsed.error.message || "Codex Responses websocket error")
-					error.code = parsed.error.code
-					failure = error
-					completed = true
-					wake()
-					return
+					const error: Error & { code?: string } = new Error(
+						parsed.error.message || "Codex Responses websocket error",
+					);
+					error.code = parsed.error.code;
+					failure = error;
+					completed = true;
+					wake();
+					return;
 				}
 
-				eventQueue.push(parsed as OpenAI.Responses.ResponseStreamEvent)
-				if (parsed?.type === "response.completed" || parsed?.type === "response.failed") {
-					completed = true
+				eventQueue.push(parsed as OpenAI.Responses.ResponseStreamEvent);
+				if (
+					parsed?.type === "response.completed" ||
+					parsed?.type === "response.failed"
+				) {
+					completed = true;
 				}
-				wake()
+				wake();
 			} catch (error) {
 				const parseError: Error & { code?: string } = new Error(
 					`Failed to parse websocket event: ${error instanceof Error ? error.message : String(error)}`,
-				)
-				parseError.code = "websocket_parse_error"
-				failure = parseError
-				completed = true
-				wake()
+				);
+				parseError.code = "websocket_parse_error";
+				failure = parseError;
+				completed = true;
+				wake();
 			}
-		}
+		};
 
 		const handleError = () => {
-			const error: Error & { code?: string } = new Error("Codex Responses websocket emitted an error event")
-			error.code = "websocket_error"
-			failure = error
-			completed = true
-			wake()
-		}
+			const error: Error & { code?: string } = new Error(
+				"Codex Responses websocket emitted an error event",
+			);
+			error.code = "websocket_error";
+			failure = error;
+			completed = true;
+			wake();
+		};
 
 		const handleClose = () => {
 			if (!completed) {
-				const error: Error & { code?: string } = new Error("Codex Responses websocket closed during response stream")
-				error.code = "websocket_closed"
-				failure = error
-				completed = true
-				wake()
+				const error: Error & { code?: string } = new Error(
+					"Codex Responses websocket closed during response stream",
+				);
+				error.code = "websocket_closed";
+				failure = error;
+				completed = true;
+				wake();
 			}
-		}
+		};
 
-		ws.addEventListener("message", handleMessage)
-		ws.addEventListener("error", handleError)
-		ws.addEventListener("close", handleClose)
+		ws.addEventListener("message", handleMessage);
+		ws.addEventListener("error", handleError);
+		ws.addEventListener("close", handleClose);
 
 		try {
 			ws.send(
@@ -456,38 +591,42 @@ export class OpenAiCodexHandler implements ApiHandler {
 					type: "response.create",
 					...params,
 				}),
-			)
+			);
 
 			while (!completed || eventQueue.length > 0) {
 				if (eventQueue.length === 0) {
 					await new Promise<void>((resolve) => {
-						resolver = resolve
-					})
-					continue
+						resolver = resolve;
+					});
+					continue;
 				}
 
-				const event = eventQueue.shift()
+				const event = eventQueue.shift();
 				if (event) {
-					yield event
+					yield event;
 				}
 			}
 
 			if (failure) {
-				throw failure
+				throw failure;
 			}
 		} finally {
-			ws.removeEventListener("message", handleMessage)
-			ws.removeEventListener("error", handleError)
-			ws.removeEventListener("close", handleClose)
-			this.websocketRequestInFlight = false
+			ws.removeEventListener("message", handleMessage);
+			ws.removeEventListener("error", handleError);
+			ws.removeEventListener("close", handleClose);
+			this.websocketRequestInFlight = false;
 		}
 	}
 
-	private async *makeCodexRequest(requestBody: any, model: { id: string; info: ModelInfo }, accessToken: string): ApiStream {
-		const url = `${CODEX_API_BASE_URL}/responses`
+	private async *makeCodexRequest(
+		requestBody: any,
+		model: { id: string; info: ModelInfo },
+		accessToken: string,
+	): ApiStream {
+		const url = `${CODEX_API_BASE_URL}/responses`;
 
 		// Get ChatGPT account ID for organization subscriptions
-		const accountId = await openAiCodexOAuthManager.getAccountId()
+		const accountId = await openAiCodexOAuthManager.getAccountId();
 
 		// Build headers with required Codex-specific fields
 		const headers: Record<string, string> = {
@@ -496,11 +635,11 @@ export class OpenAiCodexHandler implements ApiHandler {
 			originator: "cline",
 			session_id: this.sessionId,
 			"User-Agent": `cline/${process.env.npm_package_version || "1.0.0"} (${os.platform()} ${os.release()}; ${os.arch()}) node/${process.version.slice(1)}`,
-		}
+		};
 
 		// Add ChatGPT-Account-Id if available
 		if (accountId) {
-			headers["ChatGPT-Account-Id"] = accountId
+			headers["ChatGPT-Account-Id"] = accountId;
 		}
 
 		try {
@@ -509,94 +648,103 @@ export class OpenAiCodexHandler implements ApiHandler {
 				headers,
 				body: JSON.stringify(requestBody),
 				signal: this.abortController?.signal,
-			})
+			});
 
 			if (!response.ok) {
-				const errorText = await response.text()
-				let errorMessage = `Codex API request failed: ${response.status}`
+				const errorText = await response.text();
+				let errorMessage = `Codex API request failed: ${response.status}`;
 
 				try {
-					const errorJson = JSON.parse(errorText)
+					const errorJson = JSON.parse(errorText);
 					if (errorJson.error?.message) {
-						errorMessage = errorJson.error.message
+						errorMessage = errorJson.error.message;
 					} else if (errorJson.message) {
-						errorMessage = errorJson.message
+						errorMessage = errorJson.message;
 					}
 				} catch {
 					if (errorText) {
-						errorMessage += ` - ${errorText}`
+						errorMessage += ` - ${errorText}`;
 					}
 				}
 
-				throw new Error(errorMessage)
+				throw new Error(errorMessage);
 			}
 
 			if (!response.body) {
-				throw new Error("No response body from Codex API")
+				throw new Error("No response body from Codex API");
 			}
 
-			yield* this.handleStreamResponse(response.body, model)
+			yield* this.handleStreamResponse(response.body, model);
 		} catch (error) {
 			if (error instanceof Error) {
-				throw new Error(`Codex API error: ${error.message}`)
+				throw new Error(`Codex API error: ${error.message}`);
 			}
-			throw new Error("Unexpected error connecting to Codex API")
+			throw new Error("Unexpected error connecting to Codex API");
 		}
 	}
 
-	private async *handleStreamResponse(body: ReadableStream<Uint8Array>, model: { id: string; info: ModelInfo }): ApiStream {
-		const reader = body.getReader()
-		const decoder = new TextDecoder()
-		let buffer = ""
+	private async *handleStreamResponse(
+		body: ReadableStream<Uint8Array>,
+		model: { id: string; info: ModelInfo },
+	): ApiStream {
+		const reader = body.getReader();
+		const decoder = new TextDecoder();
+		let buffer = "";
 
 		try {
 			while (true) {
 				if (this.abortController?.signal.aborted) {
-					break
+					break;
 				}
 
-				const { done, value } = await reader.read()
+				const { done, value } = await reader.read();
 				if (done) {
-					break
+					break;
 				}
 
-				buffer += decoder.decode(value, { stream: true })
-				const lines = buffer.split("\n")
-				buffer = lines.pop() || ""
+				buffer += decoder.decode(value, { stream: true });
+				const lines = buffer.split("\n");
+				buffer = lines.pop() || "";
 
 				for (const line of lines) {
 					if (line.startsWith("data: ")) {
-						const data = line.slice(6).trim()
+						const data = line.slice(6).trim();
 						if (data === "[DONE]") {
-							continue
+							continue;
 						}
 
 						try {
-							const parsed = JSON.parse(data)
+							const parsed = JSON.parse(data);
 
 							for await (const outChunk of this.processEvent(parsed, model)) {
-								yield outChunk
+								yield outChunk;
 							}
 						} catch (e) {
 							if (!(e instanceof SyntaxError)) {
-								throw e
+								throw e;
 							}
 						}
 					}
 				}
 			}
 		} finally {
-			reader.releaseLock()
+			reader.releaseLock();
 		}
 	}
 
-	private async *processEvent(event: any, model: { id: string; info: ModelInfo }): ApiStream {
+	private async *processEvent(
+		event: any,
+		model: { id: string; info: ModelInfo },
+	): ApiStream {
 		// Handle text deltas
-		if (event?.type === "response.text.delta" || event?.type === "response.output_text.delta") {
+		if (
+			event?.type === "response.text.delta" ||
+			event?.type === "response.output_text.delta"
+		) {
 			if (event?.delta) {
-				yield { type: "text", text: event.delta }
+				yield { type: "text", text: event.delta };
 			}
-			return
+			return;
 		}
 
 		// Handle reasoning deltas
@@ -607,26 +755,39 @@ export class OpenAiCodexHandler implements ApiHandler {
 			event?.type === "response.reasoning_summary_text.delta"
 		) {
 			if (event?.delta) {
-				yield { type: "reasoning", reasoning: event.delta }
+				yield { type: "reasoning", reasoning: event.delta };
 			}
-			return
+			return;
 		}
 
 		// Handle refusal deltas
 		if (event?.type === "response.refusal.delta") {
 			if (event?.delta) {
-				yield { type: "text", text: `[Refusal] ${event.delta}` }
+				yield { type: "text", text: `[Refusal] ${event.delta}` };
 			}
-			return
+			return;
 		}
 
 		// Handle tool/function call deltas
-		if (event?.type === "response.tool_call_arguments.delta" || event?.type === "response.function_call_arguments.delta") {
-			const callId = event.call_id || event.tool_call_id || event.id || this.pendingToolCallId
-			const name = event.name || event.function_name || this.pendingToolCallName
-			const args = event.delta || event.arguments
+		if (
+			event?.type === "response.tool_call_arguments.delta" ||
+			event?.type === "response.function_call_arguments.delta"
+		) {
+			const callId =
+				event.call_id ||
+				event.tool_call_id ||
+				event.id ||
+				this.pendingToolCallId;
+			const name =
+				event.name || event.function_name || this.pendingToolCallName;
+			const args = event.delta || event.arguments;
 
-			if (typeof callId === "string" && callId.length > 0 && typeof name === "string" && name.length > 0) {
+			if (
+				typeof callId === "string" &&
+				callId.length > 0 &&
+				typeof name === "string" &&
+				name.length > 0
+			) {
 				yield {
 					type: "tool_calls",
 					tool_call: {
@@ -637,42 +798,52 @@ export class OpenAiCodexHandler implements ApiHandler {
 							arguments: typeof args === "string" ? args : "",
 						},
 					},
-				}
+				};
 			}
-			return
+			return;
 		}
 
 		// Handle output item events
-		if (event?.type === "response.output_item.added" || event?.type === "response.output_item.done") {
-			const item = event?.item
+		if (
+			event?.type === "response.output_item.added" ||
+			event?.type === "response.output_item.done"
+		) {
+			const item = event?.item;
 			if (item) {
 				// Capture tool identity for subsequent argument deltas
 				if (item.type === "function_call" || item.type === "tool_call") {
-					const callId = item.call_id || item.tool_call_id || item.id
-					const name = item.name || item.function?.name || item.function_name
+					const callId = item.call_id || item.tool_call_id || item.id;
+					const name = item.name || item.function?.name || item.function_name;
 					if (typeof callId === "string" && callId.length > 0) {
-						this.pendingToolCallId = callId
-						this.pendingToolCallName = typeof name === "string" ? name : undefined
+						this.pendingToolCallId = callId;
+						this.pendingToolCallName =
+							typeof name === "string" ? name : undefined;
 					}
 				}
 
 				if (item.type === "text" && item.text) {
-					yield { type: "text", text: item.text }
+					yield { type: "text", text: item.text };
 				} else if (item.type === "reasoning" && item.text) {
-					yield { type: "reasoning", reasoning: item.text }
+					yield { type: "reasoning", reasoning: item.text };
 				} else if (item.type === "message" && Array.isArray(item.content)) {
 					for (const content of item.content) {
-						if ((content?.type === "text" || content?.type === "output_text") && content?.text) {
-							yield { type: "text", text: content.text }
+						if (
+							(content?.type === "text" || content?.type === "output_text") &&
+							content?.text
+						) {
+							yield { type: "text", text: content.text };
 						}
 					}
 				} else if (
 					(item.type === "function_call" || item.type === "tool_call") &&
 					event.type === "response.output_item.done"
 				) {
-					const callId = item.call_id || item.tool_call_id || item.id
+					const callId = item.call_id || item.tool_call_id || item.id;
 					if (callId) {
-						const args = item.arguments || item.function?.arguments || item.function_arguments
+						const args =
+							item.arguments ||
+							item.function?.arguments ||
+							item.function_arguments;
 						yield {
 							type: "tool_calls",
 							id: callId,
@@ -680,53 +851,63 @@ export class OpenAiCodexHandler implements ApiHandler {
 								call_id: callId,
 								function: {
 									id: callId,
-									name: item.name || item.function?.name || item.function_name || "",
+									name:
+										item.name ||
+										item.function?.name ||
+										item.function_name ||
+										"",
 									arguments: typeof args === "string" ? args : "{}",
 								},
 							},
-						}
+						};
 					}
 				}
 			}
-			return
+			return;
 		}
 
 		// Handle completion events
-		if (event?.type === "response.done" || event?.type === "response.completed") {
-			const usage = event?.response?.usage || event?.usage || undefined
-			const usageData = this.normalizeUsage(usage, model)
+		if (
+			event?.type === "response.done" ||
+			event?.type === "response.completed"
+		) {
+			const usage = event?.response?.usage || event?.usage || undefined;
+			const usageData = this.normalizeUsage(usage, model);
 			if (usageData) {
-				yield usageData
+				yield usageData;
 			}
-			return
+			return;
 		}
 
 		// Fallbacks for legacy formats
 		if (event?.choices?.[0]?.delta?.content) {
-			yield { type: "text", text: event.choices[0].delta.content }
-			return
+			yield { type: "text", text: event.choices[0].delta.content };
+			return;
 		}
 
 		if (event?.usage) {
-			const usageData = this.normalizeUsage(event.usage, model)
+			const usageData = this.normalizeUsage(event.usage, model);
 			if (usageData) {
-				yield usageData
+				yield usageData;
 			}
 		}
 	}
 
 	abort(): void {
-		this.closeResponsesWebsocket()
-		this.abortController?.abort()
+		this.closeResponsesWebsocket();
+		this.abortController?.abort();
 	}
 
 	getModel(): { id: OpenAiCodexModelId; info: ModelInfo } {
-		const modelId = this.options.apiModelId
+		const modelId = this.options.apiModelId;
 
-		const id = modelId && modelId in openAiCodexModels ? (modelId as OpenAiCodexModelId) : openAiCodexDefaultModelId
+		const id =
+			modelId && modelId in openAiCodexModels
+				? (modelId as OpenAiCodexModelId)
+				: openAiCodexDefaultModelId;
 
-		const info: ModelInfo = openAiCodexModels[id]
+		const info: ModelInfo = openAiCodexModels[id];
 
-		return { id, info }
+		return { id, info };
 	}
 }
