@@ -1,6 +1,6 @@
 import type { ToolUse } from "@core/assistant-message"
 import { formatResponse } from "@core/prompts/responses"
-import { findLast, parsePartialArrayString } from "@shared/array"
+import { findLast, parseUserSelectableOptions } from "@shared/array"
 import { telemetryService } from "@/services/telemetry"
 import { ClinePlanModeResponse } from "@/shared/ExtensionMessage"
 import { Logger } from "@/shared/services/Logger"
@@ -23,11 +23,13 @@ export class PlanModeRespondHandler implements IToolHandler, IPartialBlockHandle
 	 */
 	async handlePartialBlock(block: ToolUse, uiHelpers: StronglyTypedUIHelpers): Promise<void> {
 		const response = block.params.response
-		const optionsRaw = block.params.options
+		const optionsRaw = block.params.options as unknown
+		const optionsInput =
+			typeof optionsRaw === "string" ? uiHelpers.removeClosingTag(block, "options", optionsRaw) : optionsRaw
 
 		const sharedMessage = {
 			response: uiHelpers.removeClosingTag(block, "response", response),
-			options: parsePartialArrayString(uiHelpers.removeClosingTag(block, "options", optionsRaw)),
+			options: parseUserSelectableOptions(optionsInput),
 		} satisfies ClinePlanModeResponse
 
 		await uiHelpers.ask(this.name, JSON.stringify(sharedMessage), true).catch(() => {})
@@ -35,7 +37,7 @@ export class PlanModeRespondHandler implements IToolHandler, IPartialBlockHandle
 
 	async execute(config: TaskConfig, block: ToolUse): Promise<ToolResponse> {
 		const response: string | undefined = block.params.response
-		const optionsRaw: string | undefined = block.params.options
+		const optionsRaw = block.params.options as unknown
 		const needsMoreExploration: boolean = block.params.needs_more_exploration === "true"
 
 		// Validate required parameters
@@ -59,7 +61,7 @@ export class PlanModeRespondHandler implements IToolHandler, IPartialBlockHandle
 		}
 
 		// Store the number of options for telemetry
-		const options = parsePartialArrayString(optionsRaw || "[]")
+		const options = parseUserSelectableOptions(optionsRaw)
 
 		const sharedMessage = {
 			response: response,
@@ -106,7 +108,7 @@ export class PlanModeRespondHandler implements IToolHandler, IPartialBlockHandle
 		}
 
 		// Check if options contains the text response
-		if (optionsRaw && text && parsePartialArrayString(optionsRaw).includes(text)) {
+		if (text && options.includes(text)) {
 			telemetryService.captureOptionSelected(config.ulid, options.length, "plan")
 			// Valid option selected, don't show user message in UI
 			// Update last plan message with selected option

@@ -54,3 +54,77 @@ export function parsePartialArrayString(arrayString: string): string[] {
 			.filter(Boolean)
 	}
 }
+
+function toCleanStringArray(value: unknown): string[] {
+	if (!Array.isArray(value)) {
+		return []
+	}
+
+	return value.map((item) => (typeof item === "string" ? item.trim() : "")).filter(Boolean)
+}
+
+function parseMarkedOptionLines(optionsString: string): string[] {
+	const lines = optionsString
+		.split(/\r?\n/)
+		.map((line) => line.trim())
+		.filter(Boolean)
+
+	if (lines.length < 2 || lines.length > 5) {
+		return []
+	}
+
+	const options: string[] = []
+	const markedListItemPattern = /^(?:(?:\d{1,2}[.)、．])\s*|[-*•]\s+)(.+)$/
+
+	for (const line of lines) {
+		const match = line.match(markedListItemPattern)
+		if (!match) {
+			return []
+		}
+
+		const option = match[1].trim()
+		if (!option) {
+			return []
+		}
+
+		options.push(option)
+	}
+
+	return options
+}
+
+function removeDanglingPartialArrayQuote(option: string): string {
+	return option.endsWith('"') ? option.slice(0, -1).trim() : option
+}
+
+/**
+ * Normalizes user-selectable tool options for chat UI buttons.
+ *
+ * This intentionally keeps parsePartialArrayString strict for existing non-UI
+ * callers such as web_search domain filters, while adding a guarded fallback
+ * for models that provide options as numbered or bulleted lines.
+ */
+export function parseUserSelectableOptions(options: unknown): string[] {
+	const directArray = toCleanStringArray(options)
+	if (directArray.length > 0) {
+		return directArray
+	}
+
+	if (typeof options !== "string") {
+		return []
+	}
+
+	try {
+		const parsedJsonArray = toCleanStringArray(JSON.parse(options))
+		if (parsedJsonArray.length > 0) {
+			return parsedJsonArray
+		}
+	} catch {
+		const parsedPartialArray = toCleanStringArray(parsePartialArrayString(options)).map(removeDanglingPartialArrayQuote)
+		if (parsedPartialArray.length > 0) {
+			return parsedPartialArray
+		}
+	}
+
+	return parseMarkedOptionLines(options)
+}

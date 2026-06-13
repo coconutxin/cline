@@ -1,6 +1,6 @@
 import { processFilesIntoText } from "@integrations/misc/extract-text"
 import { showSystemNotification } from "@integrations/notifications"
-import { findLast, parsePartialArrayString } from "@shared/array"
+import { findLast, parseUserSelectableOptions } from "@shared/array"
 import { ClineAsk, ClineAskQuestion } from "@shared/ExtensionMessage"
 import { ClineDefaultTool } from "@shared/tools"
 import { telemetryService } from "@/services/telemetry"
@@ -20,10 +20,12 @@ export class AskFollowupQuestionToolHandler implements IToolHandler, IPartialBlo
 
 	async handlePartialBlock(block: ToolUse, uiHelpers: StronglyTypedUIHelpers): Promise<void> {
 		const question = block.params.question || ""
-		const optionsRaw = block.params.options || "[]"
+		const optionsRaw = block.params.options as unknown
+		const optionsInput =
+			typeof optionsRaw === "string" ? uiHelpers.removeClosingTag(block, "options", optionsRaw) : optionsRaw
 		const sharedMessage = {
 			question: uiHelpers.removeClosingTag(block, "question", question),
-			options: parsePartialArrayString(uiHelpers.removeClosingTag(block, "options", optionsRaw)),
+			options: parseUserSelectableOptions(optionsInput),
 		} satisfies ClineAskQuestion
 
 		await uiHelpers.ask("followup" as ClineAsk, JSON.stringify(sharedMessage), block.partial).catch(() => {})
@@ -31,7 +33,7 @@ export class AskFollowupQuestionToolHandler implements IToolHandler, IPartialBlo
 
 	async execute(config: TaskConfig, block: ToolUse): Promise<ToolResponse> {
 		const question: string | undefined = block.params.question
-		const optionsRaw: string | undefined = block.params.options
+		const optionsRaw = block.params.options as unknown
 
 		// Validate required parameter
 		if (!question) {
@@ -61,12 +63,12 @@ export class AskFollowupQuestionToolHandler implements IToolHandler, IPartialBlo
 			})
 		}
 
+		const options = parseUserSelectableOptions(optionsRaw)
+
 		const sharedMessage = {
 			question: question,
-			options: parsePartialArrayString(optionsRaw || "[]"),
+			options,
 		} satisfies ClineAskQuestion
-
-		const options = parsePartialArrayString(optionsRaw || "[]")
 
 		// Ask the question
 		const {
@@ -76,7 +78,7 @@ export class AskFollowupQuestionToolHandler implements IToolHandler, IPartialBlo
 		} = await config.callbacks.ask("followup", JSON.stringify(sharedMessage), false)
 
 		// Check if options contains the text response
-		if (optionsRaw && text && options.includes(text)) {
+		if (text && options.includes(text)) {
 			telemetryService.captureOptionSelected(config.ulid, options.length, "act")
 
 			// Valid option selected, update last followup message with selected option

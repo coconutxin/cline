@@ -1,6 +1,6 @@
 import { describe, it } from "mocha"
 import "should"
-import { findLast, findLastIndex } from "./array"
+import { findLast, findLastIndex, parseUserSelectableOptions } from "./array"
 
 describe("Array Utilities", () => {
 	describe("findLastIndex", () => {
@@ -86,6 +86,47 @@ describe("Array Utilities", () => {
 				return false
 			})
 			indices.should.deepEqual([2, 1, 0]) // Should iterate in reverse
+		})
+	})
+
+	describe("parseUserSelectableOptions", () => {
+		it("should preserve native string array options", () => {
+			parseUserSelectableOptions([" Option A ", "Option B", ""]).should.deepEqual(["Option A", "Option B"])
+		})
+
+		it("should parse JSON array string options", () => {
+			parseUserSelectableOptions('["Option A", "Option B", "Option C"]').should.deepEqual([
+				"Option A",
+				"Option B",
+				"Option C",
+			])
+		})
+
+		it("should parse partial JSON array string options", () => {
+			parseUserSelectableOptions('["Option A", "Option B"').should.deepEqual(["Option A", "Option B"])
+		})
+
+		it("should parse numbered list string options", () => {
+			parseUserSelectableOptions(
+				"1. 开始实现一转法师 v3 的某个具体技能\n2. 先检查/准备一转法师 v3 三表与号段\n3. 继续完善或调整一转法师 v3 计划文档\n4. 其它任务（请直接说明）",
+			).should.deepEqual([
+				"开始实现一转法师 v3 的某个具体技能",
+				"先检查/准备一转法师 v3 三表与号段",
+				"继续完善或调整一转法师 v3 计划文档",
+				"其它任务（请直接说明）",
+			])
+		})
+
+		it("should parse bulleted list string options", () => {
+			parseUserSelectableOptions("- Option A\n- Option B\n- Option C").should.deepEqual([
+				"Option A",
+				"Option B",
+				"Option C",
+			])
+		})
+
+		it("should not parse unmarked plain text as options", () => {
+			parseUserSelectableOptions("Option A\nOption B").should.deepEqual([])
 		})
 	})
 })
