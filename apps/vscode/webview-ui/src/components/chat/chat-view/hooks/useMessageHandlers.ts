@@ -1,11 +1,45 @@
 import type { ClineMessage } from "@shared/ExtensionMessage"
 import { EmptyRequest, StringRequest } from "@shared/proto/cline/common"
 import { AskResponseRequest, NewTaskRequest } from "@shared/proto/cline/task"
-import { useCallback, useRef } from "react"
+import { useCallback, useEffect, useRef } from "react"
 import { useExtensionState } from "@/context/ExtensionStateContext"
 import { SlashServiceClient, TaskServiceClient } from "@/services/grpc-client"
 import type { ButtonActionType } from "../shared/buttonConfig"
 import type { ChatState, MessageHandlers } from "../types/chatTypes"
+
+const AUTO_START_NEW_TASK_WITH_CONTEXT_STORAGE_KEY = "cline.autoStartNewTaskWithContext"
+
+function isAutoStartNewTaskWithContextEnabled(): boolean {
+	try {
+		return window.localStorage.getItem(AUTO_START_NEW_TASK_WITH_CONTEXT_STORAGE_KEY) !== "false"
+	} catch {
+		return true
+	}
+}
+
+function buildAutoContinuationPrompt(context: string): string {
+	return `# Auto-Continuation Task
+
+You are continuing the same long-running task in a new task segment. The previous segment generated the handoff context below.
+
+## Mandatory Continuation Rules
+
+- Do not ask the user what to do next.
+- Do not present multiple options for the user to choose from.
+- Continue directly from the "Next Immediate Action" in the handoff context.
+- If additional context is needed, read the plan files, source files, or execution ledger mentioned in the handoff context.
+- Only ask the user a follow-up question if there is a real blocker that cannot be resolved from the repository, the plan file, or the handoff context.
+- When this segment or batch is complete and the overall task is not complete, call the \`new_task\` tool again with an updated executable handoff context.
+- If the overall task is complete, call \`attempt_completion\` with a final report.
+
+## Next Immediate Action
+
+Start from the first concrete item under "Pending Tasks and Next Steps" in the handoff context. If that section names a specific batch, round, file, or checklist item, continue from that exact point.
+
+## Previous Segment Handoff Context
+
+${context}`
+}
 
 /**
  * Custom hook for managing message handlers
@@ -25,6 +59,7 @@ export function useMessageHandlers(messages: ClineMessage[], chatState: ChatStat
 		lastMessage,
 	} = chatState
 	const cancelInFlightRef = useRef(false)
+	const autoStartedNewTaskWithContextRef = useRef<number | null>(null)
 
 	// Handle sending a message
 	const handleSendMessage = useCallback(
@@ -152,6 +187,50 @@ export function useMessageHandlers(messages: ClineMessage[], chatState: ChatStat
 		await TaskServiceClient.clearTask(EmptyRequest.create({}))
 	}, [setActiveQuote])
 
+	const startNewTaskWithContext = useCallback(
+		async (context?: string, wrapForAutoContinuation = false) => {
+			const taskText = context?.trim()
+			if (!taskText) {
+				return
+			}
+
+			await TaskServiceClient.newTask(
+				NewTaskRequest.create({
+					text: wrapForAutoContinuation ? buildAutoContinuationPrompt(taskText) : taskText,
+					images: [],
+					files: [],
+				}),
+			)
+		},
+		[],
+	)
+
+	useEffect(() => {
+		if (!isAutoStartNewTaskWithContextEnabled()) {
+			return
+		}
+		if (clineAsk !== "new_task") {
+			return
+		}
+		if (lastMessage?.type !== "ask" || lastMessage.ask !== "new_task") {
+			return
+		}
+		if (lastMessage.partial === true) {
+			return
+		}
+
+		const context = lastMessage.text?.trim()
+		if (!context || autoStartedNewTaskWithContextRef.current === lastMessage.ts) {
+			return
+		}
+
+		autoStartedNewTaskWithContextRef.current = lastMessage.ts
+		startNewTaskWithContext(context, true).catch((err) => {
+			console.error("Failed to auto-start new task with context:", err)
+			autoStartedNewTaskWithContextRef.current = null
+		})
+	}, [clineAsk, lastMessage, startNewTaskWithContext])
+
 	// Clear input state helper
 	const clearInputState = useCallback(() => {
 		setInputValue("")
@@ -238,13 +317,7 @@ export function useMessageHandlers(messages: ClineMessage[], chatState: ChatStat
 
 				case "new_task":
 					if (clineAsk === "new_task") {
-						await TaskServiceClient.newTask(
-							NewTaskRequest.create({
-								text: lastMessage?.text,
-								images: [],
-								files: [],
-							}),
-						)
+						await startNewTaskWithContext(lastMessage?.text)
 					} else {
 						await startNewTask()
 					}
@@ -300,6 +373,7 @@ export function useMessageHandlers(messages: ClineMessage[], chatState: ChatStat
 			clearInputState,
 			handleSendMessage,
 			startNewTask,
+			startNewTaskWithContext,
 			chatState,
 			backgroundCommandRunning,
 			setSendingDisabled,
