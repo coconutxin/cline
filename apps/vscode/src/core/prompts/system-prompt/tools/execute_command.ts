@@ -6,7 +6,7 @@ const GENERIC: ClineToolSpec = {
 	variant: ModelFamily.GENERIC,
 	id: ClineDefaultTool.BASH,
 	name: "execute_command",
-	description: `Request to execute a CLI command on the system. Use this when you need to perform system operations or run specific commands to accomplish any step in the user's task. You must tailor your command to the user's system and provide a clear explanation of what the command does. For command chaining, use the appropriate chaining syntax for the user's shell. Prefer to execute complex CLI commands over creating executable scripts, as they are more flexible and easier to run. Commands will be executed in the current working directory: {{CWD}}{{MULTI_ROOT_HINT}}`,
+	description: `Request to execute a CLI command on the system. Use this when you need to perform system operations or run specific commands to accomplish any step in the user's task. You must tailor your command to the user's system and provide a clear explanation of what the command does. For command chaining, use the appropriate chaining syntax for the user's shell. Prefer to execute complex CLI commands over creating executable scripts, as they are more flexible and easier to run. Prefer non-interactive commands that do not wait for stdin, enter REPLs, or open pagers/editors. Commands will be executed in the current working directory: {{CWD}}{{MULTI_ROOT_HINT}}`,
 	parameters: [
 		{
 			name: "command",
@@ -26,9 +26,8 @@ const GENERIC: ClineToolSpec = {
 			name: "timeout",
 			required: false,
 			type: "integer",
-			contextRequirements: (context) => context.yoloModeToggled === true,
 			instruction:
-				"Integer representing the timeout in seconds for how long to run the terminal command, before timing out and continuing the task.",
+				"Integer representing the idle timeout in seconds: if the command produces no output for this long, Cline will continue the task while leaving the command running when possible. The timer resets whenever command output is received.",
 			usage: "30",
 		},
 	],
@@ -39,7 +38,7 @@ const NATIVE_GPT_5: ClineToolSpec = {
 	id: ClineDefaultTool.BASH,
 	name: ClineDefaultTool.BASH,
 	description:
-		"Request to execute a CLI command on the system. Use this when you need to perform system operations or run specific commands to accomplish any step in the user's task.",
+		"Request to execute a CLI command on the system. Use this when you need to perform system operations or run specific commands to accomplish any step in the user's task. Prefer non-interactive commands that do not wait for stdin, enter REPLs, or open pagers/editors.",
 	parameters: [
 		{
 			name: "command",
@@ -54,6 +53,13 @@ const NATIVE_GPT_5: ClineToolSpec = {
 				"To indicate whether this command requires explicit user approval or interaction before it should be executed. For system/file altering operations like installing/uninstalling packages, removing/overwriting files, system configuration changes, network operations, or any commands that are considered potentially dangerous must be set to true. False for safe operations like running development servers, building projects, and other non-destructive operations.",
 			type: "boolean",
 		},
+		{
+			name: "timeout",
+			required: false,
+			type: "integer",
+			instruction:
+				"Idle timeout in seconds: if the command produces no output for this long, Cline will continue the task while leaving the command running when possible. The timer resets whenever command output is received.",
+		},
 	],
 }
 
@@ -67,7 +73,7 @@ const GEMINI_3: ClineToolSpec = {
 	id: ClineDefaultTool.BASH,
 	name: ClineDefaultTool.BASH,
 	description:
-		"Request to execute a CLI command on the system. Use this when you need to perform system operations or run specific commands to accomplish any step in the user's task. When chaining commands, use the shell operator && (not the HTML entity &amp;&amp;). If using search/grep commands, be careful to not use vague search terms that may return thousands of results. When in PLAN MODE, you may use the execute_command tool, but only in a non-destructive manner and in a way that does not alter any files.",
+		"Request to execute a CLI command on the system. Use this when you need to perform system operations or run specific commands to accomplish any step in the user's task. When chaining commands, use the shell operator && (not the HTML entity &amp;&amp;). If using search/grep commands, be careful to not use vague search terms that may return thousands of results. Prefer non-interactive commands that do not wait for stdin, enter REPLs, or open pagers/editors. When in PLAN MODE, you may use the execute_command tool, but only in a non-destructive manner and in a way that does not alter any files.",
 	parameters: [
 		{
 			name: "command",
@@ -81,6 +87,13 @@ const GEMINI_3: ClineToolSpec = {
 			instruction:
 				"To indicate whether this command requires explicit user approval or interaction before it should be executed. For system/file altering operations like installing/uninstalling packages, removing/overwriting files, system configuration changes, network operations, or any commands that are considered potentially dangerous must be set to true. False for safe operations like running development servers, building projects, and other non-destructive operations.",
 			type: "boolean",
+		},
+		{
+			name: "timeout",
+			required: false,
+			type: "integer",
+			instruction:
+				"Idle timeout in seconds: if the command produces no output for this long, Cline will continue the task while leaving the command running when possible. The timer resets whenever command output is received.",
 		},
 	],
 }

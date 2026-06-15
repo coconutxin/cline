@@ -15,7 +15,7 @@ import type { StronglyTypedUIHelpers } from "../types/UIHelpers"
 import { applyModelContentFixes } from "../utils/ModelContentProcessor"
 import { ToolResultUtils } from "../utils/ToolResultUtils"
 
-// Default timeout for commands in yolo mode and background exec mode
+// Default idle timeout for command execution. The timer resets whenever output is received.
 const DEFAULT_COMMAND_TIMEOUT_SECONDS = 30
 const LONG_RUNNING_COMMAND_TIMEOUT_SECONDS = 300
 
@@ -36,6 +36,201 @@ const LONG_RUNNING_COMMAND_PATTERNS: RegExp[] = [
 export function isLikelyLongRunningCommand(command: string): boolean {
 	const normalized = command.trim().replace(/\s+/g, " ")
 	return LONG_RUNNING_COMMAND_PATTERNS.some((pattern) => pattern.test(normalized))
+}
+
+function splitCommandSegments(command: string): string[] {
+	return command
+		.split(/\s*(?:&&|\|\||[;&])\s*/)
+		.map((segment) => segment.trim())
+		.filter(Boolean)
+}
+
+function stripWrappers(segment: string): string {
+	let stripped = segment.trim()
+	while (stripped.startsWith("(") && stripped.endsWith(")")) {
+		stripped = stripped.slice(1, -1).trim()
+	}
+	return stripped
+}
+
+function tokenizeCommandSegment(segment: string): string[] {
+	const tokens = segment.match(/(?:"[^"]*"|'[^']*'|\S+)/g) ?? []
+	return tokens.map((token) => token.replace(/^(["'])(.*)\1$/, "$2"))
+}
+
+function normalizeExecutableName(token: string | undefined): string {
+	if (!token) {
+		return ""
+	}
+
+	return token
+		.trim()
+		.replace(/^['"]|['"]$/g, "")
+		.replace(/\\/g, "/")
+		.split("/")
+		.pop()!
+		.toLowerCase()
+		.replace(/\.(exe|cmd|bat|ps1)$/i, "")
+}
+
+function hasAnyFlag(tokens: string[], flags: string[]): boolean {
+	const normalizedFlags = new Set(flags)
+	return tokens.some((token) => normalizedFlags.has(token.toLowerCase()))
+}
+
+function isNpmInitWithoutYes(tokens: string[]): boolean {
+	if (normalizeExecutableName(tokens[0]) !== "npm" || tokens[1]?.toLowerCase() !== "init") {
+		return false
+	}
+
+	return !hasAnyFlag(tokens.slice(2), ["-y", "--yes", "--force"])
+}
+
+function isGitCommitWithoutMessage(tokens: string[]): boolean {
+	if (normalizeExecutableName(tokens[0]) !== "git" || tokens[1]?.toLowerCase() !== "commit") {
+		return false
+	}
+
+	return !hasAnyFlag(tokens.slice(2), ["-m", "--message", "-F", "--file", "--no-edit"])
+}
+
+function isLoginLikeInteractiveCommand(executable: string, tokens: string[]): boolean {
+	const loginCommandExecutables = new Set([
+		"az",
+		"bun",
+		"docker",
+		"gcloud",
+		"gh",
+		"huggingface-cli",
+		"npm",
+		"pnpm",
+		"vercel",
+		"wandb",
+		"yarn",
+	])
+
+	if (executable === "login" || executable === "signin" || executable === "authenticate") {
+		return true
+	}
+
+	if (!loginCommandExecutables.has(executable)) {
+		return false
+	}
+
+	return tokens.slice(1).some((token, index, args) => {
+		if (/^(login|signin|authenticate)$/i.test(token)) {
+			return true
+		}
+
+		return /^auth$/i.test(token) && /^(login|signin|authenticate)$/i.test(args[index + 1] ?? "")
+	})
+}
+
+function hasLikelyScriptArgument(args: string[]): boolean {
+	for (let index = 0; index < args.length; index++) {
+		const arg = args[index]
+		const lowerArg = arg.toLowerCase()
+
+		if (lowerArg === "--") {
+			return args.length > index + 1
+		}
+
+		if (!arg.startsWith("-")) {
+			return true
+		}
+	}
+
+	return false
+}
+
+export function getLikelyInteractiveCommandReason(command: string): string | undefined {
+	for (const rawSegment of splitCommandSegments(command)) {
+		const segment = stripWrappers(rawSegment)
+		const lowerSegment = segment.toLowerCase()
+		const tokens = tokenizeCommandSegment(segment)
+		const executable = normalizeExecutableName(tokens[0])
+
+		if (!executable) {
+			continue
+		}
+
+		if (/^(pause|choice)$/.test(executable)) {
+			return `Command segment "${segment}" waits for keyboard input.`
+		}
+
+		if (/\bset\s+\/p\b/i.test(segment)) {
+			return `Command segment "${segment}" reads from stdin.`
+		}
+
+		if (/^(python|python\d+(?:\.\d+)?|py)$/.test(executable)) {
+			const args = tokens.slice(1).map((token) => token.toLowerCase())
+			const hasNonInteractiveFlag = args.some(
+				(token) =>
+					token === "-c" ||
+					token === "-m" ||
+					token === "--version" ||
+					token === "-v" ||
+					token === "-h" ||
+					token === "--help",
+			)
+			if ((!hasNonInteractiveFlag && !hasLikelyScriptArgument(args)) || args.includes("-i")) {
+				return `Command segment "${segment}" is likely to start a Python REPL. Use python -c, python -m, or a script path instead.`
+			}
+		}
+
+		if (executable === "node") {
+			const args = tokens.slice(1).map((token) => token.toLowerCase())
+			const hasNonInteractiveFlag = args.some(
+				(token) =>
+					token === "-e" ||
+					token === "--eval" ||
+					token === "-p" ||
+					token === "--print" ||
+					token === "-v" ||
+					token === "--version" ||
+					token === "-h" ||
+					token === "--help",
+			)
+			if (
+				(!hasNonInteractiveFlag && !hasLikelyScriptArgument(args)) ||
+				args.includes("-i") ||
+				args.includes("--interactive")
+			) {
+				return `Command segment "${segment}" is likely to start a Node.js REPL. Use node -e or a script path instead.`
+			}
+		}
+
+		if (/^(cmd|powershell|pwsh)$/.test(executable)) {
+			const args = tokens.slice(1).map((token) => token.toLowerCase())
+			const hasNonInteractiveFlag =
+				executable === "cmd"
+					? args.some((token) => token === "/c")
+					: args.some(
+							(token) => token === "-command" || token === "-c" || token === "-file" || token === "-encodedcommand",
+						)
+			if (!hasNonInteractiveFlag) {
+				return `Command segment "${segment}" is likely to start an interactive shell. Provide a non-interactive command argument instead.`
+			}
+		}
+
+		if (isNpmInitWithoutYes(tokens)) {
+			return `Command segment "${segment}" is likely to prompt for package metadata. Use npm init -y for non-interactive execution.`
+		}
+
+		if (isGitCommitWithoutMessage(tokens)) {
+			return `Command segment "${segment}" is likely to open an editor. Use git commit -m or git commit -F for non-interactive execution.`
+		}
+
+		if (
+			isLoginLikeInteractiveCommand(executable, tokens) &&
+			!lowerSegment.includes("--help") &&
+			!lowerSegment.includes("--version")
+		) {
+			return `Command segment "${segment}" appears to start an authentication flow and may require interactive input.`
+		}
+	}
+
+	return undefined
 }
 
 export function resolveCommandTimeoutSeconds(
@@ -113,12 +308,9 @@ export class ExecuteCommandToolHandler implements IFullyManagedTool {
 
 		config.taskState.consecutiveMistakeCount = 0
 
-		// Handling of timeout while in yolo mode or background exec mode
-		timeoutSeconds = resolveCommandTimeoutSeconds(
-			command,
-			timeoutParam,
-			config.yoloModeToggled || config.vscodeTerminalExecutionMode === "backgroundExec",
-		)
+		// Timeout is managed as an idle timeout (no output for N seconds), so it is safe
+		// to enable for all terminal modes. Active long-running commands keep resetting it.
+		timeoutSeconds = resolveCommandTimeoutSeconds(command, timeoutParam, true)
 
 		// Pre-process command for certain models
 		if (config.api.getModel().id.includes("gemini")) {
@@ -178,6 +370,13 @@ export class ExecuteCommandToolHandler implements IFullyManagedTool {
 				await config.callbacks.say("command_permission_denied", errorMessage)
 			}
 			return formatResponse.toolError(formatResponse.permissionDeniedError(errorMessage))
+		}
+
+		const interactiveCommandReason = getLikelyInteractiveCommandReason(actualCommand)
+		if (interactiveCommandReason) {
+			return formatResponse.toolError(
+				`Command was not executed because it appears to require interactive input or start a REPL. ${interactiveCommandReason} Please rewrite it in a non-interactive form.`,
+			)
 		}
 
 		// Check clineignore validation for command

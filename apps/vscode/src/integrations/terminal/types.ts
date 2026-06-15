@@ -388,7 +388,7 @@ export type FullCommandExecutorConfig = CommandExecutorConfig
 export interface OrchestrationOptions {
 	/** The command being executed */
 	command: string
-	/** Optional timeout in seconds */
+	/** Optional idle timeout in seconds. Resets whenever command output is received. */
 	timeoutSeconds?: number
 	/** Callback to track output lines for background command tracking */
 	onOutputLine?: (line: string) => void

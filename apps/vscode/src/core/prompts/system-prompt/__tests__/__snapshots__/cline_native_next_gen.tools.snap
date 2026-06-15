@@ -33,7 +33,7 @@
     "type": "function",
     "function": {
       "name": "execute_command",
-      "description": "Request to execute a CLI command on the system. Use this when you need to perform system operations or run specific commands to accomplish any step in the user's task.",
+      "description": "Request to execute a CLI command on the system. Use this when you need to perform system operations or run specific commands to accomplish any step in the user's task. Prefer non-interactive commands that do not wait for stdin, enter REPLs, or open pagers/editors.",
       "strict": false,
       "parameters": {
         "type": "object",
@@ -45,6 +45,10 @@
           "requires_approval": {
             "type": "boolean",
             "description": "To indicate whether this command requires explicit user approval or interaction before it should be executed. For system/file altering operations like installing/uninstalling packages, removing/overwriting files, system configuration changes, network operations, or any commands that are considered potentially dangerous must be set to true. False for safe operations like running development servers, building projects, and other non-destructive operations."
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Idle timeout in seconds: if the command produces no output for this long, Cline will continue the task while leaving the command running when possible. The timer resets whenever command output is received."
           }
         },
         "required": [

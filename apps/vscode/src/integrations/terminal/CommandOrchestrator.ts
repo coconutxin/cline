@@ -116,6 +116,45 @@ export async function orchestrateCommandExecution(
 	let didContinue = false
 	let didCancelViaUi = false
 	let backgroundTrackingResult: OrchestrationResult | null = null // Set when background tracking returns early
+	let completed = false
+
+	// Timeout is intentionally activity-based: it only fires after the command
+	// has produced no output for timeoutSeconds. This prevents active long-running
+	// commands from being released just because they exceeded a wall-clock limit.
+	let idleTimeoutTimer: NodeJS.Timeout | null = null
+	let rejectIdleTimeout: ((error: Error) => void) | null = null
+
+	const clearIdleTimeoutTimer = () => {
+		if (idleTimeoutTimer) {
+			clearTimeout(idleTimeoutTimer)
+			idleTimeoutTimer = null
+		}
+	}
+
+	const clearIdleTimeout = () => {
+		clearIdleTimeoutTimer()
+		rejectIdleTimeout = null
+	}
+
+	const resetIdleTimeout = () => {
+		if (!timeoutSeconds || completed || didCancelViaUi || backgroundTrackingResult) {
+			return
+		}
+
+		clearIdleTimeoutTimer()
+		idleTimeoutTimer = setTimeout(() => {
+			idleTimeoutTimer = null
+			const reject = rejectIdleTimeout
+			rejectIdleTimeout = null
+			reject?.(new Error("COMMAND_TIMEOUT"))
+		}, timeoutSeconds * 1000)
+	}
+
+	const createIdleTimeoutPromise = () =>
+		new Promise<never>((_, reject) => {
+			rejectIdleTimeout = reject
+			resetIdleTimeout()
+		})
 
 	// Chunked terminal output buffering
 	let outputBuffer: string[] = []
@@ -381,6 +420,8 @@ export async function orchestrateCommandExecution(
 			return
 		}
 
+		resetIdleTimeout()
+
 		const lineBytes = Buffer.byteLength(line, "utf8")
 		totalOutputBytes += lineBytes
 		totalLineCount++
@@ -433,7 +474,6 @@ export async function orchestrateCommandExecution(
 		}
 	})
 
-	let completed = false
 	let completionDetails: TerminalCompletionDetails | undefined
 	let completionTimer: NodeJS.Timeout | null = null
 
@@ -448,6 +488,7 @@ export async function orchestrateCommandExecution(
 	process.once("completed", async (details?: TerminalCompletionDetails) => {
 		completed = true
 		completionDetails = details
+		clearIdleTimeout()
 		// If command completed while command_output ask was pending, release it.
 		releaseAnyPendingCommandOutputAsk()
 		// Clear the completion timer
@@ -465,6 +506,7 @@ export async function orchestrateCommandExecution(
 		}
 	})
 	process.once("error", () => {
+		clearIdleTimeout()
 		releaseAnyPendingCommandOutputAsk()
 	})
 
@@ -479,18 +521,16 @@ export async function orchestrateCommandExecution(
 	// Handle timeout if specified, or wait for process to complete
 	if (!didCancelViaUi) {
 		if (timeoutSeconds) {
-			const timeoutPromise = new Promise<never>((_, reject) => {
-				setTimeout(() => {
-					reject(new Error("COMMAND_TIMEOUT"))
-				}, timeoutSeconds * 1000)
-			})
+			const timeoutPromise = createIdleTimeoutPromise()
 
 			try {
 				await Promise.race([process, timeoutPromise])
+				clearIdleTimeout()
 			} catch (error: any) {
 				if (error.message === "COMMAND_TIMEOUT") {
-					// Timeout triggers "Proceed While Running" behavior
+					// Idle timeout triggers "Proceed While Running" behavior
 					didContinue = true
+					clearIdleTimeout()
 					// Release any pending command_output ask before transitioning state.
 					releaseAnyPendingCommandOutputAsk()
 
@@ -517,7 +557,7 @@ export async function orchestrateCommandExecution(
 
 						backgroundTrackingResult = {
 							userRejected: false,
-							result: `Command timed out after ${timeoutSeconds} seconds. Running in background.\n${logMsg}${outputMsg}`,
+							result: `Command produced no output for ${timeoutSeconds} seconds. Running in background.\n${logMsg}${outputMsg}`,
 							completed: false,
 							outputLines,
 						}
@@ -547,7 +587,7 @@ export async function orchestrateCommandExecution(
 
 					return {
 						userRejected: false,
-						result: `Command execution timed out after ${timeoutSeconds} seconds. ${result.length > 0 ? `\nOutput so far:\n${result}` : ""}`,
+						result: `Command execution timed out after ${timeoutSeconds} seconds with no output. ${result.length > 0 ? `\nOutput so far:\n${result}` : ""}`,
 						completed: false,
 						outputLines,
 					}

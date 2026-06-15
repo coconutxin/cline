@@ -112,3 +112,29 @@ describe("CommandOrchestrator exit status messaging", () => {
 		assert.match(result.result as string, /^Command executed successfully \(exit code 0\)\./)
 	})
 })
+
+describe("CommandOrchestrator idle timeout", () => {
+	it("resets the timeout whenever command output is received", async () => {
+		const process = new FakeTerminalProcess()
+		const orchestrationPromise = orchestrateCommandExecution(
+			process.asResultPromise(),
+			createTerminalManager(),
+			createCallbacks(),
+			{ command: "long-running", timeoutSeconds: 0.2, suppressUserInteraction: true },
+		)
+
+		let settled = false
+		void orchestrationPromise.then(() => {
+			settled = true
+		})
+
+		await new Promise((resolve) => setTimeout(resolve, 150))
+		process.emit("line", "still working")
+		await new Promise((resolve) => setTimeout(resolve, 120))
+		assert.equal(settled, false, "timeout should not fire while output keeps arriving")
+
+		const result = await orchestrationPromise
+		assert.equal(result.completed, false)
+		assert.match(result.result as string, /timed out after 0\.2 seconds with no output/)
+	})
+})
