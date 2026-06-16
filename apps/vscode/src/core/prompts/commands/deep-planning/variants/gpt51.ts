@@ -51,7 +51,7 @@ ${focusChainEnabled ? `You should track these five steps in your task_progress p
 Your behavior should be methodical and thorough - take time to understand the codebase completely before making any recommendations. The quality of your investigation and use of targeted reads/searches directly impacts the success of the implementation.
 
 <IMPORTANT>
-Execute only exploration and plan generation steps until explicitly instructed by the user to proceed with coding.
+Execute only exploration and plan generation steps in this deep-planning task. Implementation belongs in the new_task handoff and may start automatically when supported/enabled.
 You must thoroughly understand the existing codebase before proposing any changes.
 Perform your research without commentary or narration. Execute commands and read files without explaining what you're about to do. Only speak up if you have specific questions for the user.
 </IMPORTANT>
@@ -223,7 +223,7 @@ When you are ready to create the implementation task, you must call the new_task
   }
 }
 
-The context parameter should include all five sections as described above.
+The context parameter should include all five sections as described above. In builds with new_task auto-start enabled, the implementation task may start automatically with this context; do not tell the user they must manually confirm or enter the next task after new_task.
 
 `
 		: `**new_task Tool Definition:**
@@ -234,7 +234,7 @@ When you are ready to create the implementation task, you must call the new_task
 <context>Your detailed context here following the 5-point structure...</context>
 </new_task>
 
-The context parameter should include all five sections as described above.
+The context parameter should include all five sections as described above. In builds with new_task auto-start enabled, the implementation task may start automatically with this context; do not tell the user they must manually confirm or enter the next task after new_task.
 
 `
 }
@@ -242,7 +242,7 @@ The context parameter should include all five sections as described above.
 ### Mode Switching
 
 <IMPORTANT>
-When creating the new task, request a switch to "act mode" if you are currently in "plan mode". This ensures the implementation agent operates in execution mode rather than planning mode.
+When creating the new task, include any mode requirements needed for implementation in the handoff context. If you are currently in "plan mode" and implementation requires execution tools, note that the implementation should run in "act mode". Do not ask the user to manually confirm or enter the next task after new_task; auto-start may create the implementation task automatically.
 </IMPORTANT>
 
 ## Quality Standards
@@ -253,7 +253,7 @@ Your implementation plan should be detailed enough that another developer could 
 
 ---
 
-**Execute all five steps in sequence. Your role is to plan thoroughly, not to implement. Code creation begins only after the new task is created and you receive explicit instruction to proceed.**
+**Execute all five steps in sequence. Your role is to plan thoroughly, not to implement. Code creation belongs in the implementation task after the new_task handoff is created and the new task starts, automatically when supported/enabled.**
 
 Below is the user's input from when they indicated that they wanted to create this comprehensive implementation plan.
 </explicit_instructions>

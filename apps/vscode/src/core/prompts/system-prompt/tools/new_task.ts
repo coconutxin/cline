@@ -5,7 +5,7 @@ import type { ClineToolSpec } from "../spec"
 /**
  * ## new_task
 Description: Request to create a new task with preloaded context covering the conversation with the user up to this point and key information for continuing with the new task. With this tool, you will create a detailed summary of the conversation so far, paying close attention to the user's explicit requests and your previous actions, with a focus on the most relevant information required for the new task.
-Among other important areas of focus, this summary should be thorough in capturing technical details, code patterns, and architectural decisions that would be essential for continuing with the new task. The user will be presented with a preview of your generated context and can choose to create a new task or keep chatting in the current conversation. The user may choose to start a new task at any point.
+Among other important areas of focus, this summary should be thorough in capturing technical details, code patterns, and architectural decisions that would be essential for continuing with the new task. In this build, when new_task is used with valid context and auto-start is enabled, the next task can be started automatically with that context. Do not state that the user must manually confirm or enter the next task after new_task. For long-running segmented work, call new_task with an executable handoff context; the next task should continue directly from the first concrete item in Pending Tasks and Next Steps. The user may still choose to start a new task manually at any point.
 Parameters:
 - Context: (required) The context to preload the new task with. If applicable based on the current task, this should include:
   1. Current Work: Describe in detail what was being worked on prior to this request to create a new task. Pay special attention to the more recent messages / conversation.
@@ -26,7 +26,7 @@ const generic: ClineToolSpec = {
 	id,
 	name: "new_task",
 	description: `Request to create a new task with preloaded context covering the conversation with the user up to this point and key information for continuing with the new task. With this tool, you will create a detailed summary of the conversation so far, paying close attention to the user's explicit requests and your previous actions, with a focus on the most relevant information required for the new task.
-Among other important areas of focus, this summary should be thorough in capturing technical details, code patterns, and architectural decisions that would be essential for continuing with the new task. The user will be presented with a preview of your generated context and can choose to create a new task or keep chatting in the current conversation. The user may choose to start a new task at any point.`,
+Among other important areas of focus, this summary should be thorough in capturing technical details, code patterns, and architectural decisions that would be essential for continuing with the new task. In this build, when new_task is used with valid context and auto-start is enabled, the next task can be started automatically with that context. Do not state that the user must manually confirm or enter the next task after new_task. For long-running segmented work, call new_task with an executable handoff context; the next task should continue directly from the first concrete item in Pending Tasks and Next Steps. The user may still choose to start a new task manually at any point.`,
 	contextRequirements: (context) => !context.yoloModeToggled,
 	parameters: [
 		{

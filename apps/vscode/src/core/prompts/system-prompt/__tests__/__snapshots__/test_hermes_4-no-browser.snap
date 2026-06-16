@@ -85,7 +85,7 @@ Params: result, command (optional demonstration of completed work).
 **Gate:** Ask yourself inside <reasoning> whether all prior tool uses were user-confirmed. If not, do **not** call.
 
 **new_task** — Create a new task with context.
-Param: context (Current Work; Key Concepts; Relevant Files/Code; Problem Solving; Pending & Next).
+Param: context (Current Work; Key Concepts; Relevant Files/Code; Problem Solving; Pending & Next). Valid context can auto-start the next task; do not say the user must manually confirm after new_task. For segmented work, provide an executable handoff and continue from Pending & Next.
 *Example:*
 <new_task>
 <context>context to preload new task with</context>

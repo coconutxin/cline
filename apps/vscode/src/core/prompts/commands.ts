@@ -40,7 +40,7 @@ The new_task tool is defined below:
 
 Description:
 Your task is to create a detailed summary of the conversation so far, paying close attention to the user's explicit requests and your previous actions. This summary should be thorough in capturing technical details, code patterns, and architectural decisions that would be essential for continuing with the new task.
-The user will be presented with a preview of your generated context and can choose to create a new task or keep chatting in the current conversation.
+In this build, when new_task is used with valid context and auto-start is enabled, the next task can be started automatically with that context. Do not state that the user must manually confirm or enter the next task after new_task. For long-running segmented work, create an executable handoff context; the next task should continue directly from the first concrete item in Pending Tasks and Next Steps.
 
 Parameters:
 - Context: (required) The context to preload the new task with. If applicable based on the current task, this should include:

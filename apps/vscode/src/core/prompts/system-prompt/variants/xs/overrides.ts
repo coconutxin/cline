@@ -94,7 +94,7 @@ Key: Never include an option to toggle modes.
 </attempt_completion>  
 **Gate:** Ask yourself inside <thinking> whether all prior tool uses were user-confirmed. If not, do **not** call.
 
-**new_task** — Create a new task with context. Param: context (Current Work; Key Concepts; Relevant Files/Code; Problem Solving; Pending & Next).
+**new_task** — Create a new task with context. Param: context (Current Work; Key Concepts; Relevant Files/Code; Problem Solving; Pending & Next). Valid context can auto-start the next task; do not say the user must manually confirm after new_task. For segmented work, provide an executable handoff and continue from Pending & Next.
 
 **plan_mode_respond** — PLAN-only reply. Params: response, needs_more_exploration (optional).
 Include options/trade-offs when helpful, ask if plan matches, then add the exact mode-switch line.${

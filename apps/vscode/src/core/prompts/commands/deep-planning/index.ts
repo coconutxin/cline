@@ -52,6 +52,9 @@ export function getDeepPlanningPrompt(
  * @returns The new_task tool instructions string
  */
 function generateNewTaskInstructions(enableNativeToolCalls: boolean): string {
+	const autoStartNote =
+		"The context parameter should include all five sections as described above. In builds with new_task auto-start enabled, the implementation task may start automatically with this context; do not tell the user they must manually confirm or enter the next task after new_task."
+
 	if (enableNativeToolCalls) {
 		return `
 **new_task Tool Definition:**
@@ -67,9 +70,9 @@ When you are ready to create the implementation task, you must call the new_task
 }
 \`\`\`
 
-The context parameter should include all five sections as described above.`
-	} else {
-		return `
+${autoStartNote}`
+	}
+	return `
 **new_task Tool Definition:**
 
 When you are ready to create the implementation task, you must call the new_task tool with the following structure:
@@ -80,8 +83,7 @@ When you are ready to create the implementation task, you must call the new_task
 </new_task>
 \`\`\`
 
-The context parameter should include all five sections as described above.`
-	}
+${autoStartNote}`
 }
 
 // Export types for external use
