@@ -39,10 +39,7 @@ const HISTORY_FILTERS = {
 const normalizeWorkspaceMatchStatus = (
 	workspaceMatchStatus?: WorkspaceMatchStatus | HistoryItem["workspaceMatchStatus"],
 ): HistoryItem["workspaceMatchStatus"] => {
-	if (
-		workspaceMatchStatus === WorkspaceMatchStatus.WORKSPACE_MATCH_STATUS_MATCHED ||
-		workspaceMatchStatus === "matched"
-	) {
+	if (workspaceMatchStatus === WorkspaceMatchStatus.WORKSPACE_MATCH_STATUS_MATCHED || workspaceMatchStatus === "matched") {
 		return "matched"
 	}
 
@@ -63,6 +60,7 @@ const HistoryView = ({ onDone }: HistoryViewProps) => {
 	const [sortOption, setSortOption] = useState<SortOption>("newest")
 	const [lastNonRelevantSort, setLastNonRelevantSort] = useState<SortOption | null>("newest")
 	const [deleteAllDisabled, setDeleteAllDisabled] = useState(false)
+	const [deleteSelectedDisabled, setDeleteSelectedDisabled] = useState(false)
 	const [selectedItems, setSelectedItems] = useState<string[]>([])
 	const [showFavoritesOnly, setShowFavoritesOnly] = useState(false)
 	const [showCurrentWorkspaceOnly, setShowCurrentWorkspaceOnly] = useState(false)
@@ -185,9 +183,8 @@ const HistoryView = ({ onDone }: HistoryViewProps) => {
 		setSelectedItems((prev) => {
 			if (checked) {
 				return [...prev, itemId]
-			} else {
-				return prev.filter((id) => id !== itemId)
 			}
+			return prev.filter((id) => id !== itemId)
 		})
 	}, [])
 
@@ -202,14 +199,20 @@ const HistoryView = ({ onDone }: HistoryViewProps) => {
 
 	const handleDeleteSelectedHistoryItems = useCallback(
 		(ids: string[]) => {
-			if (ids.length > 0) {
-				TaskServiceClient.deleteTasksWithIds(StringArrayRequest.create({ value: ids }))
-					.then(() => fetchTotalTasksSize())
+			if (ids.length > 0 && !deleteSelectedDisabled) {
+				const idsToDelete = [...ids]
+				setDeleteSelectedDisabled(true)
+				TaskServiceClient.deleteTasksWithIds(StringArrayRequest.create({ value: idsToDelete }))
+					.then(async () => {
+						setSelectedItems([])
+						await fetchTotalTasksSize()
+						await loadTaskHistory()
+					})
 					.catch((error) => console.error("Error deleting tasks:", error))
-				setSelectedItems([])
+					.finally(() => setDeleteSelectedDisabled(false))
 			}
 		},
-		[fetchTotalTasksSize],
+		[deleteSelectedDisabled, fetchTotalTasksSize, loadTaskHistory],
 	)
 
 	const fuse = useMemo(() => {
@@ -459,11 +462,13 @@ const HistoryView = ({ onDone }: HistoryViewProps) => {
 					<Button
 						aria-label="Delete selected items"
 						className="w-full"
+						disabled={deleteSelectedDisabled}
 						onClick={() => {
 							handleDeleteSelectedHistoryItems(selectedItems)
 						}}
 						variant="danger">
-						Delete {selectedItems.length > 1 ? selectedItems.length : ""} Selected
+						{deleteSelectedDisabled ? "Deleting" : `Delete ${selectedItems.length > 1 ? selectedItems.length : ""}`}{" "}
+						Selected
 						{selectedItemsSize > 0 ? ` (${formatSize(selectedItemsSize)})` : ""}
 					</Button>
 				) : (
