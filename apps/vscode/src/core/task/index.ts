@@ -48,35 +48,52 @@ import {
 	GlobalFileNames,
 	getSavedApiConversationHistory,
 	getSavedClineMessages,
-} from "@core/storage/disk"
-import { releaseTaskLock } from "@core/task/TaskLockUtils"
-import { isMultiRootEnabled } from "@core/workspace/multi-root-utils"
-import { WorkspaceRootManager } from "@core/workspace/WorkspaceRootManager"
-import { buildCheckpointManager, shouldUseMultiRoot } from "@integrations/checkpoints/factory"
-import { ensureCheckpointInitialized } from "@integrations/checkpoints/initializer"
-import { ICheckpointManager } from "@integrations/checkpoints/types"
-import { DiffViewProvider } from "@integrations/editor/DiffViewProvider"
-import { formatContentBlockToMarkdown } from "@integrations/misc/export-markdown"
-import { processFilesIntoText } from "@integrations/misc/extract-text"
-import { showSystemNotification } from "@integrations/notifications"
-import { ITerminalManager } from "@integrations/terminal/types"
-import { BrowserSession } from "@services/browser/BrowserSession"
-import { UrlContentFetcher } from "@services/browser/UrlContentFetcher"
-import { featureFlagsService } from "@services/feature-flags"
-import { listFiles } from "@services/glob/list-files"
-import { McpHub } from "@services/mcp/McpHub"
-import { ApiConfiguration, ApiProvider } from "@shared/api"
-import { findLast, findLastIndex } from "@shared/array"
-import { combineApiRequests } from "@shared/combineApiRequests"
-import { combineCommandSequences } from "@shared/combineCommandSequences"
-import { ClineApiReqCancelReason, ClineApiReqInfo, ClineAsk, ClineMessage, ClineSay } from "@shared/ExtensionMessage"
-import { HistoryItem } from "@shared/HistoryItem"
-import { DEFAULT_LANGUAGE_SETTINGS, getLanguageKey, LanguageDisplay } from "@shared/Languages"
-import { USER_CONTENT_TAGS } from "@shared/messages/constants"
-import { convertClineMessageToProto } from "@shared/proto-conversions/cline-message"
-import { getProviderDefaultModelId, getProviderModelIdKey } from "@shared/storage/provider-keys"
-import { ClineDefaultTool, READ_ONLY_TOOLS } from "@shared/tools"
-import { ClineAskResponse } from "@shared/WebviewMessage"
+} from "@core/storage/disk";
+import { releaseTaskLock } from "@core/task/TaskLockUtils";
+import { isMultiRootEnabled } from "@core/workspace/multi-root-utils";
+import type { WorkspaceRootManager } from "@core/workspace/WorkspaceRootManager";
+import {
+	buildCheckpointManager,
+	shouldUseMultiRoot,
+} from "@integrations/checkpoints/factory";
+import { ensureCheckpointInitialized } from "@integrations/checkpoints/initializer";
+import type { ICheckpointManager } from "@integrations/checkpoints/types";
+import type { DiffViewProvider } from "@integrations/editor/DiffViewProvider";
+import { formatContentBlockToMarkdown } from "@integrations/misc/export-markdown";
+import { processFilesIntoText } from "@integrations/misc/extract-text";
+import { showSystemNotification } from "@integrations/notifications";
+import type { ITerminalManager } from "@integrations/terminal/types";
+import { BrowserSession } from "@services/browser/BrowserSession";
+import { UrlContentFetcher } from "@services/browser/UrlContentFetcher";
+import { featureFlagsService } from "@services/feature-flags";
+import { listFiles } from "@services/glob/list-files";
+import type { McpHub } from "@services/mcp/McpHub";
+import type { ApiConfiguration, ApiProvider } from "@shared/api";
+import { findLast, findLastIndex } from "@shared/array";
+import { combineApiRequests } from "@shared/combineApiRequests";
+import { combineCommandSequences } from "@shared/combineCommandSequences";
+import type {
+	ClineApiReqCancelReason,
+	ClineApiReqInfo,
+	ClineAsk,
+	ClineMessage,
+	ClineSay,
+} from "@shared/ExtensionMessage";
+import type { HistoryItem } from "@shared/HistoryItem";
+import {
+	DEFAULT_LANGUAGE_SETTINGS,
+	getLanguageKey,
+	type LanguageDisplay,
+} from "@shared/Languages";
+import { USER_CONTENT_TAGS } from "@shared/messages/constants";
+import { convertClineMessageToProto } from "@shared/proto-conversions/cline-message";
+import { FeatureFlag } from "@shared/services/feature-flags/feature-flags";
+import {
+	getProviderDefaultModelId,
+	getProviderModelIdKey,
+} from "@shared/storage/provider-keys";
+import { ClineDefaultTool, READ_ONLY_TOOLS } from "@shared/tools";
+import type { ClineAskResponse } from "@shared/WebviewMessage";
 import {
 	isClaude4PlusModelFamily,
 	isGPT5ModelFamily,
@@ -418,10 +435,11 @@ export class Task {
 			taskIsFavorited: this.taskIsFavorited,
 			updateTaskHistory: this.updateTaskHistory,
 			cwdOnTaskInitialization: historyItem
-				? historyItem.cwdOnTaskInitialization || historyItem.shadowGitConfigWorkTree
+				? historyItem.cwdOnTaskInitialization ||
+					historyItem.shadowGitConfigWorkTree
 				: cwd,
 			shadowGitConfigWorkTree: historyItem?.shadowGitConfigWorkTree,
-		})
+		});
 
 		// Initialize context trackers
 		this.fileContextTracker = new FileContextTracker(controller, this.taskId);
@@ -518,9 +536,12 @@ export class Task {
 			...apiConfiguration,
 			ulid: this.ulid,
 			onRetryAttempt: this.createApiRetryAttemptHandler(),
-		}
-		const mode = this.stateManager.getGlobalSettingsKey("mode")
-		const currentProvider = mode === "plan" ? apiConfiguration.planModeApiProvider : apiConfiguration.actModeApiProvider
+		};
+		const mode = this.stateManager.getGlobalSettingsKey("mode");
+		const currentProvider =
+			mode === "plan"
+				? apiConfiguration.planModeApiProvider
+				: apiConfiguration.actModeApiProvider;
 
 		// Now that ulid is initialized, we can build the API handler
 		this.api = buildApiHandler(effectiveApiConfiguration, mode);
@@ -1081,35 +1102,58 @@ export class Task {
 		return await this.controller.toggleActModeForYoloMode();
 	}
 
-	private createApiRetryAttemptHandler(): NonNullable<ApiConfiguration["onRetryAttempt"]> {
-		return async (attempt: number, maxRetries: number, delay: number, error: any) => {
-			const clineMessages = this.messageStateHandler.getClineMessages()
-			const lastApiReqStartedIndex = findLastIndex(clineMessages, (m) => m.say === "api_req_started")
+	private createApiRetryAttemptHandler(): NonNullable<
+		ApiConfiguration["onRetryAttempt"]
+	> {
+		return async (
+			attempt: number,
+			maxRetries: number,
+			delay: number,
+			error: any,
+		) => {
+			const clineMessages = this.messageStateHandler.getClineMessages();
+			const lastApiReqStartedIndex = findLastIndex(
+				clineMessages,
+				(m) => m.say === "api_req_started",
+			);
 			if (lastApiReqStartedIndex !== -1) {
 				try {
-					const currentApiReqInfo: ClineApiReqInfo = JSON.parse(clineMessages[lastApiReqStartedIndex].text || "{}")
+					const currentApiReqInfo: ClineApiReqInfo = JSON.parse(
+						clineMessages[lastApiReqStartedIndex].text || "{}",
+					);
 					currentApiReqInfo.retryStatus = {
 						attempt: attempt, // attempt is already 1-indexed from retry.ts
 						maxAttempts: maxRetries, // total attempts
 						delaySec: Math.round(delay / 1000),
-						errorSnippet: error?.message ? `${String(error.message).substring(0, 50)}...` : undefined,
-					}
+						errorSnippet: error?.message
+							? `${String(error.message).substring(0, 50)}...`
+							: undefined,
+					};
 					// Clear previous cancelReason and streamingFailedMessage if we are retrying
-					delete currentApiReqInfo.cancelReason
-					delete currentApiReqInfo.streamingFailedMessage
-					await this.messageStateHandler.updateClineMessage(lastApiReqStartedIndex, {
-						text: JSON.stringify(currentApiReqInfo),
-					})
+					delete currentApiReqInfo.cancelReason;
+					delete currentApiReqInfo.streamingFailedMessage;
+					await this.messageStateHandler.updateClineMessage(
+						lastApiReqStartedIndex,
+						{
+							text: JSON.stringify(currentApiReqInfo),
+						},
+					);
 
 					// Post the updated state to the webview so the UI reflects the retry attempt
 					await this.postStateToWebview().catch((e) =>
-						Logger.error("Error posting state to webview in onRetryAttempt:", e),
-					)
+						Logger.error(
+							"Error posting state to webview in onRetryAttempt:",
+							e,
+						),
+					);
 				} catch (e) {
-					Logger.error(`[Task ${this.taskId}] Error updating api_req_started with retryStatus:`, e)
+					Logger.error(
+						`[Task ${this.taskId}] Error updating api_req_started with retryStatus:`,
+						e,
+					);
 				}
 			}
-		}
+		};
 	}
 
 	/**
@@ -1980,47 +2024,68 @@ export class Task {
 	}
 
 	private getCurrentProviderInfo(): ApiProviderInfo {
-		const model = this.api.getModel()
-		const apiConfig = this.stateManager.getApiConfiguration()
-		const mode = this.stateManager.getGlobalSettingsKey("mode")
-		const configuredProviderId = (mode === "plan" ? apiConfig.planModeApiProvider : apiConfig.actModeApiProvider) as string
-		const providerId =
-			this.taskState.toolUseFailureFallbackActive && this.taskState.toolUseFailureFallbackProviderId
+		const model = this.api.getModel();
+		const apiConfig = this.stateManager.getApiConfiguration();
+		const mode = this.stateManager.getGlobalSettingsKey("mode");
+		const configuredProviderId = (
+			mode === "plan"
+				? apiConfig.planModeApiProvider
+				: apiConfig.actModeApiProvider
+		) as string;
+		const activeProviderId =
+			this.taskState.toolUseFailureFallbackActive &&
+			this.taskState.toolUseFailureFallbackProviderId
 				? this.taskState.toolUseFailureFallbackProviderId
-				: configuredProviderId
-		const customPrompt = this.stateManager.getGlobalSettingsKey("customPrompt")
-		return { model, providerId, customPrompt, mode }
+				: configuredProviderId;
+		const providerId =
+			activeProviderId === "cline-pass" &&
+			!featureFlagsService.getBooleanFlagEnabled(FeatureFlag.CLINE_PASS)
+				? "cline"
+				: activeProviderId;
+		const customPrompt = this.stateManager.getGlobalSettingsKey("customPrompt");
+		return { model, providerId, customPrompt, mode };
 	}
 
 	private buildToolUseFailureFallbackApiHandler():
 		| {
-				api: ApiHandler
-				providerId: ApiProvider
-				modelId: string
-				primaryProviderId: string
-				primaryModelId: string
+				api: ApiHandler;
+				providerId: ApiProvider;
+				modelId: string;
+				primaryProviderId: string;
+				primaryModelId: string;
 		  }
 		| undefined {
-		const mode = this.stateManager.getGlobalSettingsKey("mode")
-		if (mode !== "act" || this.taskState.toolUseFailureFallbackUsed || this.taskState.toolUseFailureFallbackActive) {
-			return undefined
+		const mode = this.stateManager.getGlobalSettingsKey("mode");
+		if (
+			mode !== "act" ||
+			this.taskState.toolUseFailureFallbackUsed ||
+			this.taskState.toolUseFailureFallbackActive
+		) {
+			return undefined;
 		}
 
-		const apiConfig = this.stateManager.getApiConfiguration()
-		const fallbackProvider = apiConfig.toolUseFailureFallbackApiProvider
+		const apiConfig = this.stateManager.getApiConfiguration();
+		const fallbackProvider = apiConfig.toolUseFailureFallbackApiProvider;
 		if (!apiConfig.toolUseFailureFallbackEnabled || !fallbackProvider) {
-			return undefined
+			return undefined;
 		}
 
-		const configuredFallbackModelId = apiConfig.toolUseFailureFallbackApiModelId?.trim()
-		const fallbackModelId = configuredFallbackModelId || getProviderDefaultModelId(fallbackProvider) || ""
+		const configuredFallbackModelId =
+			apiConfig.toolUseFailureFallbackApiModelId?.trim();
+		const fallbackModelId =
+			configuredFallbackModelId ||
+			getProviderDefaultModelId(fallbackProvider) ||
+			"";
 		if (!fallbackModelId) {
-			return undefined
+			return undefined;
 		}
 
-		const primaryInfo = this.getCurrentProviderInfo()
-		if (fallbackProvider === primaryInfo.providerId && fallbackModelId === primaryInfo.model.id) {
-			return undefined
+		const primaryInfo = this.getCurrentProviderInfo();
+		if (
+			fallbackProvider === primaryInfo.providerId &&
+			fallbackModelId === primaryInfo.model.id
+		) {
+			return undefined;
 		}
 
 		const fallbackConfig: ApiConfiguration = {
@@ -2029,8 +2094,10 @@ export class Task {
 			onRetryAttempt: this.createApiRetryAttemptHandler(),
 			actModeApiProvider: fallbackProvider,
 			actModeApiModelId: fallbackModelId,
-		}
-		;(fallbackConfig as Record<string, unknown>)[getProviderModelIdKey(fallbackProvider, "act")] = fallbackModelId
+		};
+		(fallbackConfig as Record<string, unknown>)[
+			getProviderModelIdKey(fallbackProvider, "act")
+		] = fallbackModelId;
 
 		return {
 			api: buildApiHandler(fallbackConfig, "act"),
@@ -2038,23 +2105,27 @@ export class Task {
 			modelId: fallbackModelId,
 			primaryProviderId: primaryInfo.providerId,
 			primaryModelId: primaryInfo.model.id,
-		}
+		};
 	}
 
-	private async activateToolUseFailureFallback(errorMessage: string): Promise<boolean> {
-		const fallback = this.buildToolUseFailureFallbackApiHandler()
+	private async activateToolUseFailureFallback(
+		errorMessage: string,
+	): Promise<boolean> {
+		const fallback = this.buildToolUseFailureFallbackApiHandler();
 		if (!fallback) {
-			return false
+			return false;
 		}
 
-		this.api = fallback.api
-		this.toolExecutor.setApi(this.api)
-		this.taskState.toolUseFailureFallbackUsed = true
-		this.taskState.toolUseFailureFallbackActive = true
-		this.taskState.toolUseFailureFallbackProviderId = fallback.providerId
-		this.taskState.toolUseFailureFallbackModelId = fallback.modelId
-		this.taskState.toolUseFailureFallbackPrimaryProviderId = fallback.primaryProviderId
-		this.taskState.toolUseFailureFallbackPrimaryModelId = fallback.primaryModelId
+		this.api = fallback.api;
+		this.toolExecutor.setApi(this.api);
+		this.taskState.toolUseFailureFallbackUsed = true;
+		this.taskState.toolUseFailureFallbackActive = true;
+		this.taskState.toolUseFailureFallbackProviderId = fallback.providerId;
+		this.taskState.toolUseFailureFallbackModelId = fallback.modelId;
+		this.taskState.toolUseFailureFallbackPrimaryProviderId =
+			fallback.primaryProviderId;
+		this.taskState.toolUseFailureFallbackPrimaryModelId =
+			fallback.primaryModelId;
 
 		await this.say(
 			"error_retry",
@@ -2069,17 +2140,21 @@ export class Task {
 				delaySeconds: 0,
 				errorMessage,
 			}),
-		)
+		);
 
 		Logger.info(
 			`[Task ${this.taskId}] Activated tool-use failure fallback: ${fallback.primaryProviderId}/${fallback.primaryModelId} -> ${fallback.providerId}/${fallback.modelId}`,
-		)
-		return true
+		);
+		return true;
 	}
 
-	private async writePromptMetadataArtifacts(params: { systemPrompt: string; providerInfo: ApiProviderInfo }): Promise<void> {
-		const enabledFlag = process.env.CLINE_WRITE_PROMPT_ARTIFACTS?.toLowerCase()
-		const enabled = enabledFlag === "1" || enabledFlag === "true" || enabledFlag === "yes"
+	private async writePromptMetadataArtifacts(params: {
+		systemPrompt: string;
+		providerInfo: ApiProviderInfo;
+	}): Promise<void> {
+		const enabledFlag = process.env.CLINE_WRITE_PROMPT_ARTIFACTS?.toLowerCase();
+		const enabled =
+			enabledFlag === "1" || enabledFlag === "true" || enabledFlag === "yes";
 		if (!enabled) {
 			return;
 		}
@@ -2492,6 +2567,9 @@ export class Task {
 				const quotaExceeded = clineError.isErrorType(
 					ClineErrorType.QuotaExceeded,
 				);
+				const isEntitlementError = clineError.isErrorType(
+					ClineErrorType.Entitlement,
+				);
 
 				// Check if this is a Cline provider insufficient credits error - don't auto-retry these
 				const isClineProviderInsufficientCredits = (() => {
@@ -2517,6 +2595,7 @@ export class Task {
 					!isAuthError &&
 					!isSpendLimitError &&
 					!quotaExceeded &&
+					!isEntitlementError &&
 					this.taskState.autoRetryAttempts < 3;
 				if (shouldRetry) {
 					// Auto-retry enabled with max 3 attempts: automatically approve the retry
@@ -2578,7 +2657,8 @@ export class Task {
 						!isClineProviderInsufficientCredits &&
 						!isAuthError &&
 						!isSpendLimitError &&
-						!quotaExceeded;
+						!quotaExceeded &&
+						!isEntitlementError;
 					if (showRetry) {
 						await this.say(
 							"error_retry",
@@ -2837,16 +2917,21 @@ export class Task {
 			mode: mode,
 		};
 
-		const maxConsecutiveMistakes = this.stateManager.getGlobalSettingsKey("maxConsecutiveMistakes")
+		const maxConsecutiveMistakes = this.stateManager.getGlobalSettingsKey(
+			"maxConsecutiveMistakes",
+		);
 		if (this.taskState.consecutiveMistakeCount >= maxConsecutiveMistakes) {
-			const displayedConsecutiveMistakeCount = Math.min(this.taskState.consecutiveMistakeCount, maxConsecutiveMistakes)
-			const mistakeLimitMessage = `This may indicate a failure in Cline's thought process or inability to use a tool properly, which can be mitigated with some user guidance (e.g. "Try breaking down the task into smaller steps").`
+			const displayedConsecutiveMistakeCount = Math.min(
+				this.taskState.consecutiveMistakeCount,
+				maxConsecutiveMistakes,
+			);
+			const mistakeLimitMessage = `This may indicate a failure in Cline's thought process or inability to use a tool properly, which can be mitigated with some user guidance (e.g. "Try breaking down the task into smaller steps").`;
 			const resetMistakeLimitState = () => {
-				this.taskState.consecutiveMistakeCount = 0
-				this.taskState.consecutiveIdenticalToolCount = 0
-				this.taskState.lastToolName = ""
-				this.taskState.lastToolParams = ""
-			}
+				this.taskState.consecutiveMistakeCount = 0;
+				this.taskState.consecutiveIdenticalToolCount = 0;
+				this.taskState.lastToolName = "";
+				this.taskState.lastToolParams = "";
+			};
 
 			// In yolo mode, don't wait for user input - fail the task
 			if (this.stateManager.getGlobalSettingsKey("yoloModeToggled")) {
@@ -2859,16 +2944,18 @@ export class Task {
 			}
 
 			const shouldAutoRetryMistakeLimit =
-				!this.taskState.suppressMistakeLimitAutoRetry && this.taskState.mistakeLimitAutoRetryAttempts < 3
+				!this.taskState.suppressMistakeLimitAutoRetry &&
+				this.taskState.mistakeLimitAutoRetryAttempts < 3;
 
 			if (shouldAutoRetryMistakeLimit) {
-				this.taskState.mistakeLimitAutoRetryAttempts++
+				this.taskState.mistakeLimitAutoRetryAttempts++;
 
 				// Calculate delay: 2s, 4s, 8s
-				const delay = 2000 * 2 ** (this.taskState.mistakeLimitAutoRetryAttempts - 1)
+				const delay =
+					2000 * 2 ** (this.taskState.mistakeLimitAutoRetryAttempts - 1);
 				const errorMessage =
 					`Cline reached the consecutive mistake limit ` +
-					`(${displayedConsecutiveMistakeCount}/${maxConsecutiveMistakes}). Retrying automatically.`
+					`(${displayedConsecutiveMistakeCount}/${maxConsecutiveMistakes}). Retrying automatically.`;
 
 				await this.say(
 					"error_retry",
@@ -2879,23 +2966,31 @@ export class Task {
 						delaySeconds: delay / 1000,
 						errorMessage,
 					}),
-				)
+				);
 
-				resetMistakeLimitState()
-				await setTimeoutPromise(delay)
+				resetMistakeLimitState();
+				await setTimeoutPromise(delay);
 			} else {
-				const didSuppressAutoRetryAfterFeedback = this.taskState.suppressMistakeLimitAutoRetry
+				const didSuppressAutoRetryAfterFeedback =
+					this.taskState.suppressMistakeLimitAutoRetry;
 				const errorMessage = didSuppressAutoRetryAfterFeedback
 					? `Cline still did not use a tool after your guidance. No additional automatic recovery attempts will be started. ${mistakeLimitMessage}`
-					: mistakeLimitMessage
-				const didActivateFallback = await this.activateToolUseFailureFallback(errorMessage)
+					: mistakeLimitMessage;
+				const didActivateFallback =
+					await this.activateToolUseFailureFallback(errorMessage);
 
 				if (didActivateFallback) {
-					const primaryProviderId = this.taskState.toolUseFailureFallbackPrimaryProviderId ?? providerId
-					const primaryModelId = this.taskState.toolUseFailureFallbackPrimaryModelId ?? model.id
+					const primaryProviderId =
+						this.taskState.toolUseFailureFallbackPrimaryProviderId ??
+						providerId;
+					const primaryModelId =
+						this.taskState.toolUseFailureFallbackPrimaryModelId ?? model.id;
 					const fallbackProviderId =
-						this.taskState.toolUseFailureFallbackProviderId ?? this.getCurrentProviderInfo().providerId
-					const fallbackModelId = this.taskState.toolUseFailureFallbackModelId ?? this.api.getModel().id
+						this.taskState.toolUseFailureFallbackProviderId ??
+						this.getCurrentProviderInfo().providerId;
+					const fallbackModelId =
+						this.taskState.toolUseFailureFallbackModelId ??
+						this.api.getModel().id;
 					userContent = [
 						{
 							type: "text",
@@ -2905,22 +3000,27 @@ export class Task {
 								`Continue the current task from the conversation history. You must either use an appropriate tool to make progress or call attempt_completion if the task is complete.`,
 						},
 						...userContent,
-					]
-					this.taskState.mistakeLimitAutoRetryAttempts = 0
-					this.taskState.suppressMistakeLimitAutoRetry = false
-					this.taskState.autoRetryAttempts = 0
-					resetMistakeLimitState()
+					];
+					this.taskState.mistakeLimitAutoRetryAttempts = 0;
+					this.taskState.suppressMistakeLimitAutoRetry = false;
+					this.taskState.autoRetryAttempts = 0;
+					resetMistakeLimitState();
 				} else if (this.taskState.toolUseFailureFallbackActive) {
 					const fallbackProviderId =
-						this.taskState.toolUseFailureFallbackProviderId ?? this.getCurrentProviderInfo().providerId
-					const fallbackModelId = this.taskState.toolUseFailureFallbackModelId ?? this.api.getModel().id
-					const fallbackFailedMessage = `Fallback model (${fallbackProviderId}/${fallbackModelId}) also failed to use a required tool or call attempt_completion after recovery attempts. The task has been stopped.`
+						this.taskState.toolUseFailureFallbackProviderId ??
+						this.getCurrentProviderInfo().providerId;
+					const fallbackModelId =
+						this.taskState.toolUseFailureFallbackModelId ??
+						this.api.getModel().id;
+					const fallbackFailedMessage = `Fallback model (${fallbackProviderId}/${fallbackModelId}) also failed to use a required tool or call attempt_completion after recovery attempts. The task has been stopped.`;
 					await this.say(
 						"error_retry",
 						JSON.stringify({
 							retrySource: "mistake_limit_fallback",
-							primaryProviderId: this.taskState.toolUseFailureFallbackPrimaryProviderId,
-							primaryModelId: this.taskState.toolUseFailureFallbackPrimaryModelId,
+							primaryProviderId:
+								this.taskState.toolUseFailureFallbackPrimaryProviderId,
+							primaryModelId:
+								this.taskState.toolUseFailureFallbackPrimaryModelId,
 							fallbackProviderId,
 							fallbackModelId,
 							attempt: 1,
@@ -2929,63 +3029,72 @@ export class Task {
 							failed: true,
 							errorMessage: fallbackFailedMessage,
 						}),
-					)
-					return true
+					);
+					return true;
 				} else {
 					await this.say(
 						"error_retry",
 						JSON.stringify({
 							retrySource: "mistake_limit",
-							retrySuppressed: didSuppressAutoRetryAfterFeedback ? "after_user_feedback" : undefined,
+							retrySuppressed: didSuppressAutoRetryAfterFeedback
+								? "after_user_feedback"
+								: undefined,
 							attempt: 3,
 							maxAttempts: 3,
 							delaySeconds: 0,
 							failed: true,
 							errorMessage,
 						}),
-					)
+					);
 
-					const autoApprovalSettings = this.stateManager.getGlobalSettingsKey("autoApprovalSettings")
+					const autoApprovalSettings = this.stateManager.getGlobalSettingsKey(
+						"autoApprovalSettings",
+					);
 					if (autoApprovalSettings.enableNotifications) {
 						showSystemNotification({
 							subtitle: "Error",
-							message: "Cline is having trouble. Would you like to continue the task?",
-						})
+							message:
+								"Cline is having trouble. Would you like to continue the task?",
+						});
 					}
-					const { response, text, images, files } = await this.ask("mistake_limit_reached", mistakeLimitMessage)
-					const didReceiveMistakeLimitFeedback = response === "messageResponse"
+					const { response, text, images, files } = await this.ask(
+						"mistake_limit_reached",
+						mistakeLimitMessage,
+					);
+					const didReceiveMistakeLimitFeedback = response === "messageResponse";
 					if (didReceiveMistakeLimitFeedback) {
 						// Display the user's message in the chat UI
-						await this.say("user_feedback", text, images, files)
+						await this.say("user_feedback", text, images, files);
 
 						// This userContent is for the *next* API call.
-						const feedbackUserContent: ClineUserContent[] = []
+						const feedbackUserContent: ClineUserContent[] = [];
 						feedbackUserContent.push({
 							type: "text",
 							text: formatResponse.tooManyMistakes(text),
-						})
+						});
 						if (images && images.length > 0) {
-							feedbackUserContent.push(...formatResponse.imageBlocks(images))
+							feedbackUserContent.push(...formatResponse.imageBlocks(images));
 						}
 
-						let fileContentString = ""
+						let fileContentString = "";
 						if (files && files.length > 0) {
-							fileContentString = await processFilesIntoText(files)
+							fileContentString = await processFilesIntoText(files);
 						}
 
 						if (fileContentString) {
 							feedbackUserContent.push({
 								type: "text",
 								text: fileContentString,
-							})
+							});
 						}
 
-						userContent = feedbackUserContent
+						userContent = feedbackUserContent;
 					}
-					this.taskState.mistakeLimitAutoRetryAttempts = 0
-					this.taskState.suppressMistakeLimitAutoRetry = didReceiveMistakeLimitFeedback
-					this.taskState.autoRetryAttempts = 0
-					resetMistakeLimitState()
+					this.taskState.mistakeLimitAutoRetryAttempts = 0;
+					this.taskState.suppressMistakeLimitAutoRetry =
+						didReceiveMistakeLimitFeedback;
+					this.taskState.autoRetryAttempts = 0;
+					resetMistakeLimitState();
 				}
 			}
 		}
@@ -3075,10 +3184,12 @@ export class Task {
 
 		// Determine if we should compact context window
 		// Note: We delay context loading until we know if we're compacting (performance optimization)
-		this.taskState.activeContextManagementTool = undefined
-		const useCompactPrompt = customPrompt === "compact" && isLocalModel(this.getCurrentProviderInfo())
-		let shouldCompact = false
-		const useAutoCondense = this.stateManager.getGlobalSettingsKey("useAutoCondense")
+		this.taskState.activeContextManagementTool = undefined;
+		const useCompactPrompt =
+			customPrompt === "compact" && isLocalModel(this.getCurrentProviderInfo());
+		let shouldCompact = false;
+		const useAutoCondense =
+			this.stateManager.getGlobalSettingsKey("useAutoCondense");
 
 		if (useAutoCondense && isNextGenModelFamily(this.api.getModel().id)) {
 			// When we initially trigger context cleanup, we increase the context window size, so we need state `currentlySummarizing`
@@ -3145,11 +3256,12 @@ export class Task {
 
 		if (shouldCompact) {
 			// When compacting, skip full context loading (use summarize_task instead)
-			parsedUserContent = userContent
-			environmentDetails = ""
-			clinerulesError = false
-			this.taskState.lastAutoCompactTriggerIndex = previousApiReqIndex
-			this.taskState.activeContextManagementTool = ClineDefaultTool.SUMMARIZE_TASK
+			parsedUserContent = userContent;
+			environmentDetails = "";
+			clinerulesError = false;
+			this.taskState.lastAutoCompactTriggerIndex = previousApiReqIndex;
+			this.taskState.activeContextManagementTool =
+				ClineDefaultTool.SUMMARIZE_TASK;
 		} else {
 			// When NOT compacting, load full context with mentions parsing and slash commands
 			[parsedUserContent, environmentDetails, clinerulesError] =
@@ -3913,13 +4025,14 @@ export class Task {
 					this.taskState.userMessageContent.push({
 						type: "text",
 						text: formatResponse.noToolsUsed(this.useNativeToolCalls),
-					})
-					this.taskState.consecutiveMistakeCount = this.taskState.suppressMistakeLimitAutoRetry
+					});
+					this.taskState.consecutiveMistakeCount = this.taskState
+						.suppressMistakeLimitAutoRetry
 						? maxConsecutiveMistakes
-						: this.taskState.consecutiveMistakeCount + 1
+						: this.taskState.consecutiveMistakeCount + 1;
 				} else if (this.taskState.consecutiveMistakeCount === 0) {
-					this.taskState.mistakeLimitAutoRetryAttempts = 0
-					this.taskState.suppressMistakeLimitAutoRetry = false
+					this.taskState.mistakeLimitAutoRetryAttempts = 0;
+					this.taskState.suppressMistakeLimitAutoRetry = false;
 				}
 
 				// Reset auto-retry counter for each new API request
@@ -4092,18 +4205,19 @@ export class Task {
 				useNativeToolCalls,
 				providerInfo,
 				mcpPromptFetcher,
-			)
+			);
 
 			if (needsCheck) {
 				needsClinerulesFileCheck = true;
 			}
 
 			if (activeContextManagementTool) {
-				this.taskState.activeContextManagementTool = activeContextManagementTool
+				this.taskState.activeContextManagementTool =
+					activeContextManagementTool;
 			}
 
-			return processedText
-		}
+			return processedText;
+		};
 
 		const processTextContent = async (
 			block: ClineTextContentBlock,
@@ -4169,7 +4283,7 @@ export class Task {
 			: false;
 
 		if (!this.taskState.activeContextManagementTool) {
-			this.taskState.activeContextManagementTool = undefined
+			this.taskState.activeContextManagementTool = undefined;
 		}
 
 		// Add focus chain instructions if needed

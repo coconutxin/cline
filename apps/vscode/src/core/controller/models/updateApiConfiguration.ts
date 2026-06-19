@@ -6,6 +6,7 @@ import { UpdateApiConfigurationRequestNew } from "@/shared/proto/index.cline";
 import { Logger } from "@/shared/services/Logger";
 import { Secrets } from "@/shared/storage/state-keys";
 import type { Controller } from "../index";
+import { clearOrganizationForClinePassProviderSelection } from "./handleClinePassProviderSelection";
 
 /**
  * Parses field mask paths into separate sets for options and secrets
@@ -155,6 +156,10 @@ export async function updateApiConfiguration(
 		}
 		if (Object.keys(options).length > 0) {
 			controller.stateManager.setGlobalStateBatch(options);
+			await clearOrganizationForClinePassProviderSelection(
+				controller,
+				controller.stateManager.getApiConfiguration(),
+			);
 		}
 
 		// Update the task's API handler if there's an active task

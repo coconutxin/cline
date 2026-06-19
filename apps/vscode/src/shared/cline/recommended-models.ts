@@ -1,13 +1,14 @@
 export interface ClineRecommendedModel {
-	id: string
-	name: string
-	description: string
-	tags: string[]
+	id: string;
+	name: string;
+	description: string;
+	tags: string[];
 }
 
 export interface ClineRecommendedModelsData {
-	recommended: ClineRecommendedModel[]
-	free: ClineRecommendedModel[]
+	recommended: ClineRecommendedModel[];
+	free: ClineRecommendedModel[];
+	clinePass: ClineRecommendedModel[];
 }
 
 /**
@@ -18,13 +19,15 @@ export const CLINE_RECOMMENDED_MODELS_FALLBACK: ClineRecommendedModelsData = {
 		{
 			id: "google/gemini-3.1-pro-preview",
 			name: "Google Gemini 3.1 Pro Preview",
-			description: "Latest Gemini release with 1m ctx window and strong coding performance",
+			description:
+				"Latest Gemini release with 1m ctx window and strong coding performance",
 			tags: ["NEW"],
 		},
 		{
 			id: "anthropic/claude-sonnet-4.6",
 			name: "Anthropic Claude Sonnet 4.6",
-			description: "Latest Sonnet release with strong coding and agent performance",
+			description:
+				"Latest Sonnet release with strong coding and agent performance",
 			tags: ["NEW"],
 		},
 		{
@@ -44,14 +47,17 @@ export const CLINE_RECOMMENDED_MODELS_FALLBACK: ClineRecommendedModelsData = {
 		{
 			id: "kwaipilot/kat-coder-pro",
 			name: "KwaiKAT Kat Coder Pro",
-			description: "KwaiKAT's most advanced agentic coding model in the KAT-Coder series",
+			description:
+				"KwaiKAT's most advanced agentic coding model in the KAT-Coder series",
 			tags: ["FREE"],
 		},
 		{
 			id: "arcee-ai/trinity-large-preview:free",
 			name: "Arcee AI Trinity Large Preview",
-			description: "Arcee AI's advanced large preview model in the Trinity series",
+			description:
+				"Arcee AI's advanced large preview model in the Trinity series",
 			tags: ["FREE"],
 		},
 	],
-}
+	clinePass: [],
+};

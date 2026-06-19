@@ -1,6 +1,6 @@
 // Map providers to their specific model ID keys
 
-import { Secrets, SettingsKey } from "@shared/storage/state-keys"
+import { Secrets, SettingsKey } from "@shared/storage/state-keys";
 import {
 	ApiProvider,
 	anthropicDefaultModelId,
@@ -9,6 +9,7 @@ import {
 	bedrockDefaultModelId,
 	cerebrasDefaultModelId,
 	claudeCodeDefaultModelId,
+	clinePassDefaultModelId,
 	deepSeekDefaultModelId,
 	doubaoDefaultModelId,
 	fireworksDefaultModelId,
@@ -34,11 +35,12 @@ import {
 	vertexDefaultModelId,
 	wandbDefaultModelId,
 	xaiDefaultModelId,
-} from "../api"
+} from "../api";
 
 const ProviderKeyMap: Partial<Record<ApiProvider, string>> = {
 	openrouter: "OpenRouterModelId",
 	cline: "ClineModelId",
+	"cline-pass": "ClinePassModelId",
 	openai: "OpenAiModelId",
 	ollama: "OllamaModelId",
 	lmstudio: "LmStudioModelId",
@@ -56,10 +58,13 @@ const ProviderKeyMap: Partial<Record<ApiProvider, string>> = {
 	hicap: "HicapModelId",
 	nousResearch: "NousResearchModelId",
 	"vercel-ai-gateway": "VercelAiGatewayModelId",
-} as const
+} as const;
 
-export const ProviderToApiKeyMap: Partial<Record<ApiProvider, keyof Secrets | (keyof Secrets)[]>> = {
+export const ProviderToApiKeyMap: Partial<
+	Record<ApiProvider, keyof Secrets | (keyof Secrets)[]>
+> = {
 	cline: ["clineApiKey", "clineAccountId"],
+	"cline-pass": ["clineApiKey", "clineAccountId"],
 	anthropic: "apiKey",
 	openrouter: "openRouterApiKey",
 	bedrock: ["awsAccessKey", "awsBedrockApiKey"],
@@ -96,12 +101,13 @@ export const ProviderToApiKeyMap: Partial<Record<ApiProvider, keyof Secrets | (k
 	nousResearch: "nousResearchApiKey",
 	sapaicore: ["sapAiCoreClientId", "sapAiCoreClientSecret"],
 	wandb: "wandbApiKey",
-} as const
+} as const;
 
 const ProviderDefaultModelMap: Partial<Record<ApiProvider, string>> = {
 	anthropic: anthropicDefaultModelId,
 	openrouter: openRouterDefaultModelId,
 	cline: openRouterDefaultModelId,
+	"cline-pass": clinePassDefaultModelId,
 	openai: openAiNativeDefaultModelId,
 	ollama: "",
 	lmstudio: "",
@@ -139,24 +145,29 @@ const ProviderDefaultModelMap: Partial<Record<ApiProvider, string>> = {
 	qwen: internationalQwenDefaultModelId,
 	deepseek: deepSeekDefaultModelId,
 	wandb: wandbDefaultModelId,
-} as const
+} as const;
 
 /**
  * Get the provider-specific model ID key for a given provider and mode.
  * Different providers store their model IDs in different state keys.
  */
-export function getProviderModelIdKey(provider: ApiProvider, mode: "act" | "plan"): SettingsKey {
-	const keySuffix = ProviderKeyMap[provider]
+export function getProviderModelIdKey(
+	provider: ApiProvider,
+	mode: "act" | "plan",
+): SettingsKey {
+	const keySuffix = ProviderKeyMap[provider];
 	if (keySuffix) {
 		// E.g. actModeOpenAiModelId, planModeOpenAiModelId, etc.
-		return `${mode}Mode${keySuffix}` as SettingsKey
+		return `${mode}Mode${keySuffix}` as SettingsKey;
 	}
 
 	// For providers without a specific key (anthropic, gemini, bedrock, etc.),
 	// they use the generic actModeApiModelId/planModeApiModelId
-	return `${mode}ModeApiModelId`
+	return `${mode}ModeApiModelId`;
 }
 
-export function getProviderDefaultModelId(provider: ApiProvider): string | null {
-	return ProviderDefaultModelMap[provider] || ""
+export function getProviderDefaultModelId(
+	provider: ApiProvider,
+): string | null {
+	return ProviderDefaultModelMap[provider] || "";
 }
