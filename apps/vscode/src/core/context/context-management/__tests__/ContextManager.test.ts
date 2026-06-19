@@ -510,4 +510,74 @@ describe("ContextManager", () => {
 			expect(result).to.equal(true)
 		})
 	})
+
+	describe("getProjectedContextWindowUsage", () => {
+		let contextManager: ContextManager
+
+		beforeEach(() => {
+			contextManager = new ContextManager()
+		})
+
+		it("detects a large current request even when previous token usage is below the compaction threshold", () => {
+			const api = createMockApi(64_000)
+			const clineMessages: ClineMessage[] = [createApiReqMessage({ tokensIn: 10_000, tokensOut: 1_000 })]
+			const previousRequestShouldCompact = contextManager.shouldCompactContextWindow(clineMessages, api, 0)
+
+			const messages: Anthropic.Messages.MessageParam[] = [
+				{ role: "user", content: "Initial task" },
+				{ role: "assistant", content: "Acknowledged" },
+				{
+					role: "user",
+					content: [{ type: "text", text: `Newly loaded file content:\n${"x".repeat(150_000)}` }],
+				},
+			]
+
+			const projectedUsage = contextManager.getProjectedContextWindowUsage(messages, api)
+
+			expect(previousRequestShouldCompact).to.equal(false)
+			expect(projectedUsage.thresholdTokens).to.equal(37_000)
+			expect(projectedUsage.estimatedTokens).to.be.greaterThan(projectedUsage.thresholdTokens)
+			expect(projectedUsage.shouldCompact).to.equal(true)
+		})
+
+		it("does not compact projected requests that stay below the safe context budget", () => {
+			const api = createMockApi(64_000)
+			const messages: Anthropic.Messages.MessageParam[] = [
+				{ role: "user", content: "Initial task" },
+				{ role: "assistant", content: "Acknowledged" },
+				{
+					role: "user",
+					content: [{ type: "text", text: `Small current request:\n${"x".repeat(10_000)}` }],
+				},
+			]
+
+			const projectedUsage = contextManager.getProjectedContextWindowUsage(messages, api)
+
+			expect(projectedUsage.thresholdTokens).to.equal(37_000)
+			expect(projectedUsage.estimatedTokens).to.be.lessThan(projectedUsage.thresholdTokens)
+			expect(projectedUsage.shouldCompact).to.equal(false)
+		})
+
+		it("includes system prompt and tool definitions in projected request estimates", () => {
+			const api = createMockApi(64_000)
+			const messages: Anthropic.Messages.MessageParam[] = [
+				{ role: "user", content: "Initial task" },
+				{ role: "assistant", content: "Acknowledged" },
+				{ role: "user", content: [{ type: "text", text: "Small current request" }] },
+			]
+
+			const withoutPromptOrTools = contextManager.getProjectedContextWindowUsage(messages, api)
+			const withPromptAndTools = contextManager.getProjectedContextWindowUsage(
+				messages,
+				api,
+				"s".repeat(145_000),
+				[{ name: "large_tool_schema", description: "t".repeat(10_000) }],
+			)
+
+			expect(withoutPromptOrTools.shouldCompact).to.equal(false)
+			expect(withPromptAndTools.estimatedTokens).to.be.greaterThan(withoutPromptOrTools.estimatedTokens)
+			expect(withPromptAndTools.estimatedTokens).to.be.greaterThan(withPromptAndTools.thresholdTokens)
+			expect(withPromptAndTools.shouldCompact).to.equal(true)
+		})
+	})
 })

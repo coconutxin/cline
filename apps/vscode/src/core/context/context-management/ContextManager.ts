@@ -25,6 +25,17 @@ type MessageMetadata = string[][]
 // Type for a single context update
 type ContextUpdate = [number, string, MessageContent, MessageMetadata] // [timestamp, updateType, update, metadata]
 
+const ESTIMATED_CHARS_PER_TOKEN = 4
+const REQUEST_OVERHEAD_TOKEN_BUFFER = 1_024
+
+export interface ProjectedContextWindowUsage {
+	estimatedTokens: number
+	contextWindow: number
+	maxAllowedSize: number
+	thresholdTokens: number
+	shouldCompact: boolean
+}
+
 // Type for the serialized format of our nested maps
 type SerializedContextHistory = Array<
 	[
@@ -141,6 +152,63 @@ export class ContextManager {
 			)
 		} catch (error) {
 			Logger.error("Failed to save context history:", error)
+		}
+	}
+
+	/**
+	 * Estimate the tokens a provider request will consume before sending it.
+	 *
+	 * This intentionally uses a conservative local approximation instead of a
+	 * provider token-counting API so it can run synchronously for every provider
+	 * and before the request is made. The existing context-window buffer in
+	 * getContextWindowInfo absorbs estimation error and reserved output tokens.
+	 */
+	estimateProjectedRequestTokens(
+		messages: Anthropic.Messages.MessageParam[],
+		systemPrompt?: string,
+		tools?: unknown[],
+	): number {
+		const serializedMessages = this.safeStringifyForTokenEstimate(messages)
+		const serializedTools = tools?.length ? this.safeStringifyForTokenEstimate(tools) : ""
+		const totalChars = serializedMessages.length + (systemPrompt?.length ?? 0) + serializedTools.length
+
+		return Math.ceil(totalChars / ESTIMATED_CHARS_PER_TOKEN) + REQUEST_OVERHEAD_TOKEN_BUFFER
+	}
+
+	/**
+	 * Determine whether a fully-built request is projected to exceed the safe
+	 * context-window budget. Unlike shouldCompactContextWindow(), this checks the
+	 * current request payload after new user/tool/file context has been added, so
+	 * a large newly-read file cannot slip past the previous-turn token heuristic.
+	 */
+	getProjectedContextWindowUsage(
+		messages: Anthropic.Messages.MessageParam[],
+		api: ApiHandler,
+		systemPrompt?: string,
+		tools?: unknown[],
+		thresholdPercentage?: number,
+	): ProjectedContextWindowUsage {
+		const estimatedTokens = this.estimateProjectedRequestTokens(messages, systemPrompt, tools)
+		const { contextWindow, maxAllowedSize } = getContextWindowInfo(api)
+		const roundedThreshold = thresholdPercentage
+			? Math.floor(contextWindow * thresholdPercentage)
+			: maxAllowedSize
+		const thresholdTokens = Math.min(roundedThreshold, maxAllowedSize)
+
+		return {
+			estimatedTokens,
+			contextWindow,
+			maxAllowedSize,
+			thresholdTokens,
+			shouldCompact: estimatedTokens >= thresholdTokens,
+		}
+	}
+
+	private safeStringifyForTokenEstimate(value: unknown): string {
+		try {
+			return JSON.stringify(value) ?? ""
+		} catch {
+			return String(value)
 		}
 	}
 

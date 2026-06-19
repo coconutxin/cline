@@ -3190,8 +3190,11 @@ export class Task {
 		let shouldCompact = false;
 		const useAutoCondense =
 			this.stateManager.getGlobalSettingsKey("useAutoCondense");
+		const canAutoCondense =
+			useAutoCondense && isNextGenModelFamily(this.api.getModel().id);
+		const unexpandedUserContentForCompaction = cloneDeep(userContent);
 
-		if (useAutoCondense && isNextGenModelFamily(this.api.getModel().id)) {
+		if (canAutoCondense) {
 			// When we initially trigger context cleanup, we increase the context window size, so we need state `currentlySummarizing`
 			// to track if we've already started the context summarization flow. After summarizing, we increment
 			// conversationHistoryDeletedRange to mask out the summarization-trigger user & assistant response messages
@@ -3287,6 +3290,94 @@ export class Task {
 		// do not add environment details to the message which we are compacting the context window
 		if (environmentDetails) {
 			userContent.push({ type: "text", text: environmentDetails });
+		}
+
+		if (!shouldCompact && !this.taskState.activeContextManagementTool) {
+			const getProjectedUsage = (content: ClineContent[]) => {
+				const projectedConversationHistory = [
+					...this.contextManager.getTruncatedMessages(
+						this.messageStateHandler.getApiConversationHistory(),
+						this.taskState.conversationHistoryDeletedRange,
+					),
+					{
+						role: "user" as const,
+						content,
+					},
+				];
+
+				return this.contextManager.getProjectedContextWindowUsage(
+					projectedConversationHistory,
+					this.api,
+				);
+			};
+
+			let projectedUsage = getProjectedUsage(userContent);
+			if (projectedUsage.shouldCompact) {
+				Logger.warn("[ContextManager] Projected request exceeds safe context budget before API request", {
+					estimatedTokens: projectedUsage.estimatedTokens,
+					thresholdTokens: projectedUsage.thresholdTokens,
+					contextWindow: projectedUsage.contextWindow,
+					maxAllowedSize: projectedUsage.maxAllowedSize,
+					useAutoCondense: canAutoCondense,
+				});
+
+				if (canAutoCondense) {
+					let hasEnoughActiveContext = true;
+					if (this.taskState.conversationHistoryDeletedRange) {
+						const apiHistory = this.messageStateHandler.getApiConversationHistory();
+						const activeMessageCount =
+							apiHistory.length - this.taskState.conversationHistoryDeletedRange[1] - 1;
+						hasEnoughActiveContext = activeMessageCount > 2;
+					}
+
+					if (hasEnoughActiveContext) {
+						shouldCompact = true;
+						userContent = unexpandedUserContentForCompaction;
+						this.taskState.lastAutoCompactTriggerIndex = previousApiReqIndex;
+						this.taskState.activeContextManagementTool = ClineDefaultTool.SUMMARIZE_TASK;
+					} else {
+						Logger.warn(
+							"[ContextManager] Skipping projected auto-condense because too little active context remains after prior truncation",
+						);
+					}
+				} else {
+					const apiHistory = this.messageStateHandler.getApiConversationHistory();
+					let previousRange = this.taskState.conversationHistoryDeletedRange;
+					let didTruncateForProjectedRequest = false;
+
+					while (projectedUsage.shouldCompact) {
+						const nextRange = this.contextManager.getNextTruncationRange(apiHistory, previousRange, "quarter");
+						const didMakeProgress =
+							nextRange[1] >= nextRange[0] &&
+							(!previousRange || nextRange[0] !== previousRange[0] || nextRange[1] !== previousRange[1]);
+
+						if (!didMakeProgress) {
+							break;
+						}
+
+						previousRange = nextRange;
+						this.taskState.conversationHistoryDeletedRange = nextRange;
+						didTruncateForProjectedRequest = true;
+
+						await this.contextManager.triggerApplyStandardContextTruncationNoticeChange(
+							Date.now(),
+							await ensureTaskDirectoryExists(this.taskId),
+							apiHistory,
+						);
+
+						projectedUsage = getProjectedUsage(userContent);
+					}
+
+					if (didTruncateForProjectedRequest) {
+						await this.messageStateHandler.saveClineMessagesAndUpdateHistory();
+						Logger.warn("[ContextManager] Proactively truncated context for projected request size", {
+							estimatedTokens: projectedUsage.estimatedTokens,
+							thresholdTokens: projectedUsage.thresholdTokens,
+							conversationHistoryDeletedRange: this.taskState.conversationHistoryDeletedRange,
+						});
+					}
+				}
+			}
 		}
 
 		if (shouldCompact) {
