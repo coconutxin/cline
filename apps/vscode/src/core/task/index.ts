@@ -311,6 +311,8 @@ export class Task {
 	private readonly presentationScheduler: TaskPresentationScheduler;
 	private readonly presentationSchedulingDisabled =
 		isPresentationSchedulingDisabled();
+	private accumulatedTaskDurationMs = 0;
+	private activeTaskDurationStartedAtMs?: number;
 
 	constructor(params: TaskParams) {
 		const {
@@ -416,6 +418,7 @@ export class Task {
 		if (historyItem) {
 			this.ulid = historyItem.ulid ?? ulid();
 			this.taskIsFavorited = historyItem.isFavorited;
+			this.accumulatedTaskDurationMs = historyItem.durationMs ?? 0;
 			this.taskState.conversationHistoryDeletedRange =
 				historyItem.conversationHistoryDeletedRange;
 			if (historyItem.checkpointManagerErrorMessage) {
@@ -439,6 +442,7 @@ export class Task {
 					historyItem.shadowGitConfigWorkTree
 				: cwd,
 			shadowGitConfigWorkTree: historyItem?.shadowGitConfigWorkTree,
+			getTaskDurationMs: () => this.getTaskDurationMs(),
 		});
 
 		// Initialize context trackers
@@ -705,6 +709,41 @@ export class Task {
 		);
 	}
 
+	private startTaskDurationTracking() {
+		if (this.activeTaskDurationStartedAtMs === undefined) {
+			this.activeTaskDurationStartedAtMs = Date.now();
+		}
+	}
+
+	private pauseTaskDurationTracking() {
+		if (this.activeTaskDurationStartedAtMs === undefined) {
+			return;
+		}
+
+		this.accumulatedTaskDurationMs += Math.max(
+			0,
+			Date.now() - this.activeTaskDurationStartedAtMs,
+		);
+		this.activeTaskDurationStartedAtMs = undefined;
+	}
+
+	private getTaskDurationMs(): number {
+		if (this.activeTaskDurationStartedAtMs === undefined) {
+			return this.accumulatedTaskDurationMs;
+		}
+
+		return (
+			this.accumulatedTaskDurationMs +
+			Math.max(0, Date.now() - this.activeTaskDurationStartedAtMs)
+		);
+	}
+
+	private shouldPauseDurationForAsk(type: ClineAsk): boolean {
+		// command_output can be emitted while a command continues running in the
+		// terminal, so that waiting period is still active task execution time.
+		return type !== "command_output";
+	}
+
 	private async scheduleAssistantPresentation(
 		trigger: TaskLatencyTrigger,
 		priority: PresentationPriority = "normal",
@@ -890,6 +929,10 @@ export class Task {
 
 		const shouldWakeOnAbort =
 			type !== "resume_task" && type !== "resume_completed_task";
+		const didPauseDuration = this.shouldPauseDurationForAsk(type);
+		if (didPauseDuration) {
+			this.pauseTaskDurationTracking();
+		}
 		await pWaitFor(
 			() =>
 				this.taskState.askResponse !== undefined ||
@@ -909,6 +952,12 @@ export class Task {
 			images: this.taskState.askResponseImages,
 			files: this.taskState.askResponseFiles,
 		};
+		if (
+			didPauseDuration &&
+			!(type === "completion_result" && result.response === "yesButtonClicked")
+		) {
+			this.startTaskDurationTracking();
+		}
 		this.taskState.askResponse = undefined;
 		this.taskState.askResponseText = undefined;
 		this.taskState.askResponseImages = undefined;
@@ -1271,6 +1320,7 @@ export class Task {
 		images?: string[],
 		files?: string[],
 	): Promise<void> {
+		this.startTaskDurationTracking();
 		try {
 			await this.clineIgnoreController.initialize();
 		} catch (error) {
@@ -1816,6 +1866,8 @@ export class Task {
 
 	async abortTask() {
 		try {
+			this.pauseTaskDurationTracking();
+
 			// PHASE 1: Check if TaskCancel should run BEFORE any cleanup
 			// We must capture this state now because subsequent cleanup will
 			// clear the active work indicators that shouldRunTaskCancelHook checks

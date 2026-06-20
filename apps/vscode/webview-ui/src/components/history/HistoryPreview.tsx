@@ -4,6 +4,7 @@ import { memo } from "react"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { useExtensionState } from "@/context/ExtensionStateContext"
 import { TaskServiceClient } from "@/services/grpc-client"
+import { formatDuration } from "@/utils/format"
 
 type HistoryPreviewProps = {
 	showHistoryView: () => void
@@ -193,6 +194,9 @@ const HistoryPreview = ({ showHistoryView }: HistoryPreviewProps) => {
 										<span className="history-date">{formatDate(item.ts)}</span>
 										{item.totalCost != null && (
 											<span className="history-cost-chip">${item.totalCost.toFixed(2)}</span>
+										)}
+										{item.durationMs !== undefined && (
+											<span className="history-date">{formatDuration(item.durationMs)}</span>
 										)}
 									</div>
 								</div>

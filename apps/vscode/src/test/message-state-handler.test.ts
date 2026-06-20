@@ -96,6 +96,38 @@ describe("MessageStateHandler Mutex Protection", () => {
 		await fs.rm(tempDir, { recursive: true, force: true })
 	})
 
+	it("should include task duration when updating history", async () => {
+		const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "message-state-handler-test-"))
+		setVscodeHostProviderMock({ globalStorageFsPath: tempDir })
+
+		const taskState = new TaskState()
+		let updatedHistoryItem: HistoryItem | undefined
+		const handler = new MessageStateHandler({
+			taskId: "test-task-id",
+			ulid: "test-ulid",
+			taskState,
+			getTaskDurationMs: () => 12_345,
+			updateTaskHistory: async (historyItem) => {
+				updatedHistoryItem = historyItem
+				return [historyItem]
+			},
+		})
+
+		handler.setApiConversationHistory([{ role: "user", content: "initial task" }])
+		await handler.addToClineMessages({
+			ts: Date.now(),
+			type: "say",
+			say: "task",
+			text: "test task",
+		})
+
+		should.exist(updatedHistoryItem)
+		updatedHistoryItem?.durationMs?.should.equal(12_345)
+
+		HostProvider.reset()
+		await fs.rm(tempDir, { recursive: true, force: true })
+	})
+
 	/**
 	 * CRITICAL TEST: Verify that addToClineMessages is atomic
 	 * This test simulates the race condition that can occur when multiple

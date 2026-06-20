@@ -111,6 +111,7 @@ export async function getTaskHistory(
 				cacheWrites: item.cacheWrites || 0,
 				cacheReads: item.cacheReads || 0,
 				modelId: item.modelId || "",
+				durationMs: item.durationMs || 0,
 				workspaceMatchStatus:
 					affinity.status === "matched"
 						? WorkspaceMatchStatus.WORKSPACE_MATCH_STATUS_MATCHED

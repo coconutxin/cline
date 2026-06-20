@@ -16,6 +16,7 @@ function createTaskResponse(historyItem: {
 	cacheWrites?: number;
 	cacheReads?: number;
 	modelId?: string;
+	durationMs?: number;
 }): TaskResponse {
 	return TaskResponse.create({
 		id: historyItem.id,
@@ -29,6 +30,7 @@ function createTaskResponse(historyItem: {
 		cacheWrites: historyItem.cacheWrites || 0,
 		cacheReads: historyItem.cacheReads || 0,
 		modelId: historyItem.modelId || "",
+		durationMs: historyItem.durationMs || 0,
 	});
 }
 

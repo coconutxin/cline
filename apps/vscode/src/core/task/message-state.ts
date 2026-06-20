@@ -44,6 +44,7 @@ interface MessageStateHandlerParams {
 	cwdOnTaskInitialization?: string
 	shadowGitConfigWorkTree?: string
 	checkpointManagerErrorMessage?: string
+	getTaskDurationMs?: () => number | undefined
 }
 
 export class MessageStateHandler extends EventEmitter<MessageStateHandlerEvents> {
@@ -57,6 +58,7 @@ export class MessageStateHandler extends EventEmitter<MessageStateHandlerEvents>
 	private taskState: TaskState
 	private readonly cwdOnTaskInitialization?: string
 	private shadowGitConfigWorkTree?: string
+	private getTaskDurationMs?: () => number | undefined
 
 	// Mutex to prevent concurrent state modifications (RC-4)
 	// Protects against data loss from race conditions when multiple
@@ -73,6 +75,7 @@ export class MessageStateHandler extends EventEmitter<MessageStateHandlerEvents>
 		this.updateTaskHistory = params.updateTaskHistory
 		this.cwdOnTaskInitialization = params.cwdOnTaskInitialization
 		this.shadowGitConfigWorkTree = params.shadowGitConfigWorkTree
+		this.getTaskDurationMs = params.getTaskDurationMs
 	}
 
 	/**
@@ -160,6 +163,7 @@ export class MessageStateHandler extends EventEmitter<MessageStateHandlerEvents>
 				cacheWrites: apiMetrics.totalCacheWrites,
 				cacheReads: apiMetrics.totalCacheReads,
 				totalCost: apiMetrics.totalCost,
+				durationMs: this.getTaskDurationMs?.(),
 				size: taskDirSize,
 				shadowGitConfigWorkTree: this.shadowGitConfigWorkTree,
 				cwdOnTaskInitialization: this.cwdOnTaskInitialization,

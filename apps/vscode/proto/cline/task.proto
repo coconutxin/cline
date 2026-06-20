@@ -73,6 +73,7 @@ message TaskResponse {
   int32 cache_writes = 9;
   int32 cache_reads = 10;
   string model_id = 11;
+  int64 duration_ms = 12;
 }
 
 // Request for getting task history with filtering
@@ -111,6 +112,7 @@ message TaskItem {
   string model_id = 11;
   WorkspaceMatchStatus workspace_match_status = 12;
   string workspace_affinity_path = 13;
+  int64 duration_ms = 14;
 }
 
 // Request for ask response operation

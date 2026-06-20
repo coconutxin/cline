@@ -17,7 +17,7 @@ import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 import { TaskServiceClient } from "@/services/grpc-client"
-import { formatLargeNumber, formatSize } from "@/utils/format"
+import { formatDuration, formatLargeNumber, formatSize } from "@/utils/format"
 
 type HistoryViewItemProps = {
 	item: HistoryItem
@@ -165,6 +165,9 @@ const HistoryViewItem = ({
 					<div className="flex items-center justify-between w-full">
 						<div className="text-description text-xs uppercase">{formatDate(item.ts)}</div>
 						<div className="self-end flex items-center text-xs">
+							{item.durationMs !== undefined && (
+								<span className="text-description mr-2">{formatDuration(item.durationMs)}</span>
+							)}
 							<span className="text-description">${item.totalCost?.toFixed(4) ?? 0}</span>
 							{expanded ? (
 								<ChevronsDownUpIcon className="text-description" />
@@ -221,6 +224,11 @@ const HistoryViewItem = ({
 											<span className="text-description">{item.modelId}</span>
 										</div>
 									)}
+
+									<div className="flex justify-between items-center w-full gap-1 text-xs">
+										<span className="font-medium text-description">Duration:</span>
+										<span className="text-description">{formatDuration(item.durationMs)}</span>
+									</div>
 
 									<div className="flex justify-between items-center w-full gap-1 text-xs">
 										<span className="font-medium text-description">Size:</span>
