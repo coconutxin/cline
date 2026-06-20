@@ -6,6 +6,7 @@ import { getModeSpecificFields, normalizeApiConfiguration } from "@/components/s
 import { useExtensionState } from "@/context/ExtensionStateContext"
 import { cn } from "@/lib/utils"
 import { getEnvironmentColor } from "@/utils/environmentColors"
+import { formatDuration } from "@/utils/format"
 import CopyTaskButton from "./buttons/CopyTaskButton"
 import DeleteTaskButton from "./buttons/DeleteTaskButton"
 import NewTaskButton from "./buttons/NewTaskButton"
@@ -92,6 +93,8 @@ const TaskHeader: React.FC<TaskHeaderProps> = ({
 	// Simplified computed values
 	const { selectedModelInfo } = normalizeApiConfiguration(apiConfiguration, mode)
 	const modeFields = getModeSpecificFields(apiConfiguration, mode)
+	const formattedDuration =
+		currentTaskItem?.durationMs !== undefined ? formatDuration(currentTaskItem.durationMs) : undefined
 
 	const isCostAvailable =
 		(totalCost &&
@@ -169,6 +172,11 @@ const TaskHeader: React.FC<TaskHeaderProps> = ({
 						)}
 					</div>
 					<div className="inline-flex items-center justify-end select-none shrink-0">
+						{formattedDuration && (
+							<span className="mx-1 text-xs sm:text-sm text-description whitespace-nowrap" title="Task duration">
+								{formattedDuration}
+							</span>
+						)}
 						{isCostAvailable && (
 							<div
 								className="mx-1 px-1 py-0.25 rounded-full inline-flex shrink-0 text-badge-background bg-badge-foreground/80 items-center"
