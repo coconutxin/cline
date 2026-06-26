@@ -14,6 +14,7 @@ const stagingDir = path.join(os.tmpdir(), `cline-coconut-vscode-${process.pid}-$
 const upstreamRemoteName = "upstream"
 const upstreamRemoteUrl = "https://github.com/cline/cline.git"
 const syncBranch = "main"
+const defaultSyncTag = "v3.89.2"
 
 const customPackageFields = {
 	name: "cline-coconut",
@@ -80,6 +81,55 @@ function createBuildEnv() {
 	}
 
 	return env
+}
+
+function parseArgs(argv) {
+	const options = {
+		syncTag: defaultSyncTag,
+	}
+
+	for (let index = 0; index < argv.length; index++) {
+		const arg = argv[index]
+
+		if (arg === "--sync-tag") {
+			const value = argv[++index]
+			if (!value) {
+				throw new Error("--sync-tag requires a tag name")
+			}
+			options.syncTag = value
+			continue
+		}
+
+		if (arg.startsWith("--sync-tag=")) {
+			const value = arg.slice("--sync-tag=".length)
+			if (!value) {
+				throw new Error("--sync-tag requires a tag name")
+			}
+			options.syncTag = value
+			continue
+		}
+
+		if (arg === "--help" || arg === "-h") {
+			printHelp()
+			process.exit(0)
+		}
+
+		throw new Error(`Unknown argument: ${arg}`)
+	}
+
+	return options
+}
+
+function printHelp() {
+	console.log(`Package Cline VS Code extension for local distribution.
+
+Usage:
+  node package-vscode-coconut.mjs [options]
+
+Options:
+  --sync-tag <tag>  Sync the specified official tag before packaging (default: ${defaultSyncTag})
+  -h, --help        Show this help
+`)
 }
 
 async function run(command, args, options = {}) {
@@ -179,11 +229,23 @@ async function ensureCleanWorktree(reason) {
 	}
 }
 
-async function syncOfficialChanges() {
-	console.log("Syncing official Cline repository before packaging")
+function normalizeSyncTag(syncTag) {
+	const tag = syncTag.trim()
+	if (!tag) {
+		throw new Error("Sync tag cannot be empty")
+	}
+	return tag
+}
+
+async function syncOfficialChanges(syncTag) {
+	const normalizedSyncTag = normalizeSyncTag(syncTag)
+	const tagRef = `refs/tags/${normalizedSyncTag}`
+
+	console.log(`Syncing official Cline repository tag '${normalizedSyncTag}' before packaging`)
 
 	await capture("git", ["rev-parse", "--is-inside-work-tree"], { cwd: rootDir })
 	await ensureCleanWorktree("syncing upstream")
+	await capture("git", ["check-ref-format", tagRef], { cwd: rootDir })
 
 	const currentBranch = await capture("git", ["branch", "--show-current"], { cwd: rootDir })
 	if (currentBranch !== syncBranch) {
@@ -198,13 +260,14 @@ async function syncOfficialChanges() {
 	}
 
 	await run("git", ["fetch", "origin"], { cwd: rootDir })
-	await run("git", ["fetch", upstreamRemoteName], { cwd: rootDir })
+	await run("git", ["fetch", upstreamRemoteName, `${tagRef}:${tagRef}`], { cwd: rootDir })
+	const tagCommit = await capture("git", ["rev-parse", "--verify", `${tagRef}^{commit}`], { cwd: rootDir })
 	await run("git", ["pull", "--ff-only", "origin", syncBranch], { cwd: rootDir })
-	await run("git", ["merge", `${upstreamRemoteName}/${syncBranch}`], { cwd: rootDir })
+	await run("git", ["merge", "--no-edit", tagRef], { cwd: rootDir })
 	await run("git", ["push", "origin", syncBranch], { cwd: rootDir })
 
 	await ensureCleanWorktree("packaging after upstream sync")
-	console.log("Official repository sync completed and pushed to fork.")
+	console.log(`Official repository tag '${normalizedSyncTag}' (${tagCommit}) sync completed and pushed to fork.`)
 }
 
 async function installDependencies(env) {
@@ -285,15 +348,17 @@ async function createStagingPackage(originalPackage) {
 }
 
 async function main() {
+	const options = parseArgs(process.argv.slice(2))
 	const packagePath = path.join(vscodeDir, "package.json")
 	const env = createBuildEnv()
 
 	console.log("Packaging VS Code extension with staging metadata override")
 	console.log(`Source package: ${packagePath}`)
 	console.log(`Staging dir:    ${stagingDir}`)
+	console.log(`Sync tag:       ${options.syncTag}`)
 
 	try {
-		await syncOfficialChanges()
+		await syncOfficialChanges(options.syncTag)
 
 		const originalPackage = JSON.parse(await readFile(packagePath, "utf8"))
 		const outputFile = path.join(outputDir, `${customPackageFields.name}-${originalPackage.version}.vsix`)

@@ -12,6 +12,7 @@ const outputDir = path.join(rootDir, "output", "cli")
 const upstreamRemoteName = "upstream"
 const upstreamRemoteUrl = "https://github.com/cline/cline.git"
 const syncBranch = "main"
+const defaultSyncTag = "v3.89.2"
 
 const requiredNodeMajor = 22
 const requiredBunVersion = "1.3.13"
@@ -75,9 +76,12 @@ function parseArgs(argv) {
 		all: false,
 		install: true,
 		zip: process.platform === "win32",
+		syncTag: defaultSyncTag,
 	}
 
-	for (const arg of argv) {
+	for (let index = 0; index < argv.length; index++) {
+		const arg = argv[index]
+
 		switch (arg) {
 			case "--sync":
 				options.sync = true
@@ -100,11 +104,27 @@ function parseArgs(argv) {
 			case "--zip":
 				options.zip = true
 				break
+			case "--sync-tag": {
+				const value = argv[++index]
+				if (!value) {
+					throw new Error("--sync-tag requires a tag name")
+				}
+				options.syncTag = value
+				break
+			}
 			case "--help":
 			case "-h":
 				printHelp()
 				process.exit(0)
 			default:
+				if (arg.startsWith("--sync-tag=")) {
+					const value = arg.slice("--sync-tag=".length)
+					if (!value) {
+						throw new Error("--sync-tag requires a tag name")
+					}
+					options.syncTag = value
+					break
+				}
 				throw new Error(`Unknown argument: ${arg}`)
 		}
 	}
@@ -121,8 +141,9 @@ Usage:
 Options:
   --single         Build only the current platform binary (default)
   --all            Build all supported platform binaries
-  --sync           Sync upstream/main before packaging, like 打包vscode.bat
-  --skip-sync      Do not sync upstream/main (default)
+  --sync           Sync the specified official tag before packaging
+  --sync-tag <tag> Tag to sync when --sync is used (default: ${defaultSyncTag})
+  --skip-sync      Do not sync an official tag (default)
   --skip-install   Skip bun install
   --zip            Create zip archives from copied package directories
   --no-zip         Do not create zip archives
@@ -263,11 +284,23 @@ async function ensureCleanWorktree(reason) {
 	}
 }
 
-async function syncOfficialChanges(env) {
-	console.log("Syncing official Cline repository before packaging")
+function normalizeSyncTag(syncTag) {
+	const tag = syncTag.trim()
+	if (!tag) {
+		throw new Error("Sync tag cannot be empty")
+	}
+	return tag
+}
+
+async function syncOfficialChanges(env, syncTag) {
+	const normalizedSyncTag = normalizeSyncTag(syncTag)
+	const tagRef = `refs/tags/${normalizedSyncTag}`
+
+	console.log(`Syncing official Cline repository tag '${normalizedSyncTag}' before packaging`)
 
 	await capture("git", ["rev-parse", "--is-inside-work-tree"], { cwd: rootDir, env })
 	await ensureCleanWorktree("syncing upstream")
+	await capture("git", ["check-ref-format", tagRef], { cwd: rootDir, env })
 
 	const currentBranch = await capture("git", ["branch", "--show-current"], { cwd: rootDir, env })
 	if (currentBranch !== syncBranch) {
@@ -282,13 +315,14 @@ async function syncOfficialChanges(env) {
 	}
 
 	await run("git", ["fetch", "origin"], { cwd: rootDir, env })
-	await run("git", ["fetch", upstreamRemoteName], { cwd: rootDir, env })
+	await run("git", ["fetch", upstreamRemoteName, `${tagRef}:${tagRef}`], { cwd: rootDir, env })
+	const tagCommit = await capture("git", ["rev-parse", "--verify", `${tagRef}^{commit}`], { cwd: rootDir, env })
 	await run("git", ["pull", "--ff-only", "origin", syncBranch], { cwd: rootDir, env })
-	await run("git", ["merge", `${upstreamRemoteName}/${syncBranch}`], { cwd: rootDir, env })
+	await run("git", ["merge", "--no-edit", tagRef], { cwd: rootDir, env })
 	await run("git", ["push", "origin", syncBranch], { cwd: rootDir, env })
 
 	await ensureCleanWorktree("packaging after upstream sync")
-	console.log("Official repository sync completed and pushed to fork.")
+	console.log(`Official repository tag '${normalizedSyncTag}' (${tagCommit}) sync completed and pushed to fork.`)
 }
 
 function getCurrentPlatformDirName() {
@@ -398,12 +432,12 @@ async function main() {
 	console.log(`Source package: ${path.join(cliDir, "package.json")}`)
 	console.log(`Output dir:     ${outputDir}`)
 	console.log(`Mode:           ${options.all ? "all platforms" : "current platform"}`)
-	console.log(`Sync upstream:  ${options.sync ? "yes" : "no"}`)
+	console.log(`Sync tag:       ${options.sync ? options.syncTag : "no"}`)
 
 	await verifyEnvironment(env)
 
 	if (options.sync) {
-		await syncOfficialChanges(env)
+		await syncOfficialChanges(env, options.syncTag)
 	}
 
 	const cliPackage = await readCliPackage()

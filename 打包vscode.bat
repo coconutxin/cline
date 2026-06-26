@@ -16,7 +16,7 @@ if errorlevel 1 (
 	exit /b 1
 )
 
-node package-vscode-coconut.mjs
+node package-vscode-coconut.mjs %*
 set "EXIT_CODE=%ERRORLEVEL%"
 
 popd
