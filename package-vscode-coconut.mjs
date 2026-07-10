@@ -277,7 +277,11 @@ async function installDependencies(env) {
 	}
 }
 
-async function copyIfExists(relativePath) {
+function hasPathSegment(filePath, segment) {
+	return filePath.split(path.sep).includes(segment)
+}
+
+async function copyIfExists(relativePath, options = {}) {
 	const source = path.join(vscodeDir, relativePath)
 	const destination = path.join(stagingDir, relativePath)
 
@@ -287,7 +291,13 @@ async function copyIfExists(relativePath) {
 	}
 
 	await mkdir(path.dirname(destination), { recursive: true })
-	await cp(source, destination, { recursive: true, force: true })
+	await cp(source, destination, {
+		recursive: true,
+		force: true,
+		filter: options.excludeNodeModules
+			? (sourcePath) => !hasPathSegment(path.relative(source, sourcePath), "node_modules")
+			: undefined,
+	})
 }
 
 async function createStagingPackage(originalPackage) {
@@ -315,7 +325,7 @@ async function createStagingPackage(originalPackage) {
 	]
 
 	for (const entry of entriesToStage) {
-		await copyIfExists(entry)
+		await copyIfExists(entry, { excludeNodeModules: true })
 	}
 
 	// The extension CSS references VS Code codicons. The project .vscodeignore explicitly

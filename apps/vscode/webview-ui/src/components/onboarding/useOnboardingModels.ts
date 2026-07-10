@@ -41,6 +41,7 @@ function toOnboardingModel(
 					supportsPromptCache: catalogInfo.supportsPromptCache ?? false,
 					inputPrice: catalogInfo.inputPrice ?? 0,
 					outputPrice: catalogInfo.outputPrice ?? 0,
+					reasoningEffortOptions: catalogInfo.reasoningEffortOptions ?? [],
 					tiers: catalogInfo.tiers ?? [],
 				}
 			: undefined,

@@ -12,10 +12,10 @@ import { useExtensionState } from "@/context/ExtensionStateContext"
 import { useHasFeatureFlag } from "@/hooks/useFeatureFlag"
 import { cn } from "@/lib/utils"
 import { AccountServiceClient, StateServiceClient } from "@/services/grpc-client"
-import { setPendingClinePassSubscribe } from "./clinePassSubscribe"
 import ApiConfigurationSection from "../settings/sections/ApiConfigurationSection"
 import { useApiConfigurationHandlers } from "../settings/utils/useApiConfigurationHandlers"
 import WelcomeView from "../welcome/WelcomeView"
+import { setPendingClinePassSubscribe } from "./clinePassSubscribe"
 import {
 	getCapabilities,
 	getClineUIOnboardingGroups,
@@ -180,6 +180,7 @@ const ModelSelection = ({
 										cacheReadsPrice: info.cacheReadsPrice,
 										description: info.description,
 										supportsGlobalEndpoint: info.supportsGlobalEndpoint,
+										reasoningEffortOptions: info.reasoningEffortOptions || [],
 										thinkingConfig: info.thinkingConfig
 											? {
 													maxBudget: info.thinkingConfig.maxBudget,
