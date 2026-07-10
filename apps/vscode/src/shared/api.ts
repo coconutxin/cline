@@ -69,6 +69,7 @@ export interface ModelInfo {
 	supportsImages?: boolean
 	supportsPromptCache: boolean // this value is hardcoded for now
 	supportsReasoning?: boolean // Whether the model supports reasoning/thinking mode
+	reasoningEffortOptions?: string[] // Optional model-specific reasoning effort choices
 	inputPrice?: number // Keep for non-tiered input models
 	outputPrice?: number // Keep for non-tiered output models
 	thinkingConfig?: {
@@ -2368,10 +2369,50 @@ export const openAiNativeModels = {
 // Subscription-based pricing (all costs are $0)
 export type OpenAiCodexModelId = keyof typeof openAiCodexModels
 export const openAiCodexDefaultModelId: OpenAiCodexModelId = "gpt-5.3-codex"
+const OPENAI_CODEX_5_6_REASONING_EFFORT_OPTIONS = ["none", "low", "medium", "high", "xhigh", "max", "ultra"]
 export const openAiCodexModels = {
+	"gpt-5.6-sol": {
+		maxTokens: 128_000,
+		contextWindow: 372_000,
+		supportsImages: true,
+		supportsPromptCache: true,
+		supportsReasoning: true,
+		reasoningEffortOptions: OPENAI_CODEX_5_6_REASONING_EFFORT_OPTIONS,
+		apiFormat: ApiFormat.OPENAI_RESPONSES,
+		// Subscription-based: no per-token costs
+		inputPrice: 0,
+		outputPrice: 0,
+		description: "GPT-5.6-Sol Codex: Latest frontier agentic coding model.",
+	},
+	"gpt-5.6-terra": {
+		maxTokens: 128_000,
+		contextWindow: 372_000,
+		supportsImages: true,
+		supportsPromptCache: true,
+		supportsReasoning: true,
+		reasoningEffortOptions: OPENAI_CODEX_5_6_REASONING_EFFORT_OPTIONS,
+		apiFormat: ApiFormat.OPENAI_RESPONSES,
+		// Subscription-based: no per-token costs
+		inputPrice: 0,
+		outputPrice: 0,
+		description: "GPT-5.6-Terra Codex: Balanced agentic coding model for everyday work.",
+	},
+	"gpt-5.6-luna": {
+		maxTokens: 128_000,
+		contextWindow: 372_000,
+		supportsImages: true,
+		supportsPromptCache: true,
+		supportsReasoning: true,
+		reasoningEffortOptions: OPENAI_CODEX_5_6_REASONING_EFFORT_OPTIONS,
+		apiFormat: ApiFormat.OPENAI_RESPONSES,
+		// Subscription-based: no per-token costs
+		inputPrice: 0,
+		outputPrice: 0,
+		description: "GPT-5.6-Luna Codex: Fast and affordable agentic coding model.",
+	},
 	"gpt-5.5": {
 		maxTokens: 128_000,
-		contextWindow: 512_000,
+		contextWindow: 272_000,
 		supportsImages: true,
 		supportsPromptCache: true,
 		supportsReasoning: true,
@@ -5205,8 +5246,7 @@ export const fireworksModels = {
 		outputPrice: 8,
 		cacheWritesPrice: 0,
 		cacheReadsPrice: 0.3,
-		description:
-			"Kimi K2.6 Turbo router for high-performance agentic workloads with vision and text reasoning.",
+		description: "Kimi K2.6 Turbo router for high-performance agentic workloads with vision and text reasoning.",
 	},
 	"accounts/fireworks/routers/kimi-k2p6-fast": {
 		maxTokens: 262000,
@@ -5217,8 +5257,7 @@ export const fireworksModels = {
 		outputPrice: 8,
 		cacheWritesPrice: 0,
 		cacheReadsPrice: 0.3,
-		description:
-			"Kimi K2.6 Fast router for high-performance agentic workloads with vision and text reasoning.",
+		description: "Kimi K2.6 Fast router for high-performance agentic workloads with vision and text reasoning.",
 	},
 	"accounts/fireworks/routers/kimi-k2p7-code-fast": {
 		maxTokens: 262000,
@@ -5229,8 +5268,7 @@ export const fireworksModels = {
 		outputPrice: 8,
 		cacheWritesPrice: 0,
 		cacheReadsPrice: 0.38,
-		description:
-			"Kimi K2.7 Code Fast router for high-performance coding workloads with vision and text reasoning.",
+		description: "Kimi K2.7 Code Fast router for high-performance coding workloads with vision and text reasoning.",
 	},
 	"accounts/fireworks/models/deepseek-v4-flash": {
 		maxTokens: 384000,
@@ -5265,7 +5303,8 @@ export const fireworksModels = {
 		outputPrice: 4.4,
 		cacheWritesPrice: 0,
 		cacheReadsPrice: 0.26,
-		description: "GLM 5.2 is a next-generation general-purpose model optimized for coding, reasoning, and agentic workflows with a 1M context window.",
+		description:
+			"GLM 5.2 is a next-generation general-purpose model optimized for coding, reasoning, and agentic workflows with a 1M context window.",
 	},
 	"accounts/fireworks/models/glm-5p1": {
 		maxTokens: 131072,
@@ -5309,7 +5348,8 @@ export const fireworksModels = {
 		outputPrice: 1.2,
 		cacheWritesPrice: 0,
 		cacheReadsPrice: 0.06,
-		description: "MiniMax M2.7 is tuned for strong real-world performance across coding, agent-driven, and workflow-heavy tasks.",
+		description:
+			"MiniMax M2.7 is tuned for strong real-world performance across coding, agent-driven, and workflow-heavy tasks.",
 	},
 	"accounts/fireworks/models/qwen3p7-plus": {
 		maxTokens: 262144,

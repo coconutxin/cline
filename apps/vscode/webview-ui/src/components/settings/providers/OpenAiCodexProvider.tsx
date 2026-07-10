@@ -81,7 +81,12 @@ export const OpenAiCodexProvider = ({ showModelOptions, isPopup, currentMode }: 
 						}
 						selectedModelId={selectedModelId}
 					/>
-					{showReasoningEffort && <ReasoningEffortSelector currentMode={currentMode} />}
+					{showReasoningEffort && (
+						<ReasoningEffortSelector
+							allowedEfforts={selectedModelInfo.reasoningEffortOptions}
+							currentMode={currentMode}
+						/>
+					)}
 
 					<ModelInfoView isPopup={isPopup} modelInfo={selectedModelInfo} selectedModelId={selectedModelId} />
 				</>

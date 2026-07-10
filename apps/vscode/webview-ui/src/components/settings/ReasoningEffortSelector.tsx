@@ -1,4 +1,4 @@
-import { isOpenaiReasoningEffort, Mode, OPENAI_REASONING_EFFORT_OPTIONS, OpenaiReasoningEffort } from "@shared/storage/types"
+import { Mode, OPENAI_REASONING_EFFORT_OPTIONS } from "@shared/storage/types"
 import { memo } from "react"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -10,8 +10,8 @@ interface ReasoningEffortSelectorProps {
 	currentMode: Mode
 	label?: string
 	description?: string
-	allowedEfforts?: readonly OpenaiReasoningEffort[]
-	defaultEffort?: OpenaiReasoningEffort
+	allowedEfforts?: readonly string[]
+	defaultEffort?: string
 }
 
 const ReasoningEffortSelector = ({
@@ -25,7 +25,7 @@ const ReasoningEffortSelector = ({
 	const { handleModeFieldChange } = useApiConfigurationHandlers()
 	const modeFields = getModeSpecificFields(apiConfiguration, currentMode)
 	const selectedEffort =
-		isOpenaiReasoningEffort(modeFields.reasoningEffort) && allowedEfforts.includes(modeFields.reasoningEffort)
+		typeof modeFields.reasoningEffort === "string" && allowedEfforts.includes(modeFields.reasoningEffort)
 			? modeFields.reasoningEffort
 			: defaultEffort
 

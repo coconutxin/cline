@@ -63,6 +63,7 @@ function convertModelInfoToProtoOpenRouter(info: ModelInfo | undefined): OpenRou
 		thinkingConfig: convertThinkingConfigToProto(info.thinkingConfig),
 		supportsGlobalEndpoint: info.supportsGlobalEndpoint,
 		tiers: info.tiers || [],
+		reasoningEffortOptions: info.reasoningEffortOptions || [],
 	}
 }
 
@@ -85,6 +86,7 @@ function convertProtoToModelInfo(info: OpenRouterModelInfo | undefined): ModelIn
 		thinkingConfig: convertProtoToThinkingConfig(info.thinkingConfig),
 		supportsGlobalEndpoint: info.supportsGlobalEndpoint,
 		tiers: info.tiers.length > 0 ? info.tiers : undefined,
+		reasoningEffortOptions: info.reasoningEffortOptions.length > 0 ? info.reasoningEffortOptions : undefined,
 	}
 }
 
