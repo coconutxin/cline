@@ -86,6 +86,7 @@ function createBuildEnv() {
 function parseArgs(argv) {
 	const options = {
 		syncTag: defaultSyncTag,
+		skipSync: false,
 	}
 
 	for (let index = 0; index < argv.length; index++) {
@@ -109,6 +110,11 @@ function parseArgs(argv) {
 			continue
 		}
 
+		if (arg === "--skip-sync") {
+			options.skipSync = true
+			continue
+		}
+
 		if (arg === "--help" || arg === "-h") {
 			printHelp()
 			process.exit(0)
@@ -128,6 +134,7 @@ Usage:
 
 Options:
   --sync-tag <tag>  Sync the specified official tag before packaging (default: ${defaultSyncTag})
+	--skip-sync        Package the current working tree without syncing upstream
   -h, --help        Show this help
 `)
 }
@@ -365,16 +372,22 @@ async function main() {
 	console.log("Packaging VS Code extension with staging metadata override")
 	console.log(`Source package: ${packagePath}`)
 	console.log(`Staging dir:    ${stagingDir}`)
-	console.log(`Sync tag:       ${options.syncTag}`)
+	console.log(`Sync tag:       ${options.skipSync ? "skipped (current working tree)" : options.syncTag}`)
 
 	try {
-		await syncOfficialChanges(options.syncTag)
+		if (options.skipSync) {
+			console.log("Skipping upstream sync; packaging the current working tree, including uncommitted changes.")
+		} else {
+			await syncOfficialChanges(options.syncTag)
+		}
 
 		const originalPackage = JSON.parse(await readFile(packagePath, "utf8"))
 		const outputFile = path.join(outputDir, `${customPackageFields.name}-${originalPackage.version}.vsix`)
 
 		console.log(`Output file:    ${outputFile}`)
-		console.log(`Version:        ${originalPackage.version} (from source package.json after upstream sync)`)
+		console.log(
+			`Version:        ${originalPackage.version} (from source package.json${options.skipSync ? "" : " after upstream sync"})`,
+		)
 
 		await mkdir(outputDir, { recursive: true })
 		await installDependencies(env)

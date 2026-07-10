@@ -67,6 +67,9 @@ describe("PromptRegistry", () => {
 				{ id: "gpt-oss-120b", provider: "openai-compatible", expected: ModelFamily.NATIVE_GPT_5, useNativeTools: true },
 				{ id: "gpt-5", provider: "cline", expected: ModelFamily.GPT_5, useNativeTools: false },
 				{ id: "gpt-5-1", provider: "openai-native", expected: ModelFamily.NATIVE_GPT_5_1, useNativeTools: true },
+				{ id: "gpt-5.6-sol", provider: "openai-codex", expected: ModelFamily.NATIVE_GPT_5_1, useNativeTools: true },
+				{ id: "gpt-5.6-terra", provider: "openai-codex", expected: ModelFamily.NATIVE_GPT_5_1, useNativeTools: true },
+				{ id: "gpt-5.6-luna", provider: "openai-codex", expected: ModelFamily.NATIVE_GPT_5_1, useNativeTools: true },
 				{ id: "openai/gpt-5", expected: ModelFamily.NEXT_GEN },
 				{ id: "gemini3", provider: "vertex", expected: ModelFamily.GEMINI_3, useNativeTools: true },
 				{ id: "unknown-model", expected: ModelFamily.GENERIC },
@@ -149,6 +152,26 @@ describe("PromptRegistry", () => {
 
 			expect(toolNames).to.not.include("focus_chain")
 			expect(JSON.stringify(nativeTools)).to.not.include('"focus_chain"')
+		})
+
+		it("should expose new_task to GPT-5.6 Codex models", async () => {
+			const nativeContext: SystemPromptContext = {
+				...mockContext,
+				enableNativeToolCalls: true,
+				providerInfo: {
+					...mockProviderInfo,
+					providerId: "openai-codex",
+					model: { ...mockProviderInfo.model, id: "gpt-5.6-sol" },
+				},
+			}
+
+			await registry.get(nativeContext)
+			const nativeTools = registry.nativeTools
+			expect(nativeTools).to.be.an("array").that.is.not.empty
+
+			const toolNames = (nativeTools as any[]).map((tool) => (tool?.type === "function" ? tool.function?.name : tool?.name))
+
+			expect(toolNames).to.include("new_task")
 		})
 
 		it("should expose condense and hide new_task during compact command native tool generation", async () => {

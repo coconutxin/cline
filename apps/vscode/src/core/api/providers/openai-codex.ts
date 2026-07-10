@@ -51,6 +51,10 @@ export class OpenAiCodexHandler implements ApiHandler {
 	// Track tool call identity for streaming
 	private pendingToolCallId: string | undefined
 	private pendingToolCallName: string | undefined
+	// Responses API emits both text deltas and the completed message item. Track
+	// streamed items so the completed item is only used as a no-delta fallback.
+	private streamedTextItemIds = new Set<string>()
+	private sawUnidentifiedTextDelta = false
 
 	constructor(options: OpenAiCodexHandlerOptions) {
 		this.options = options
@@ -103,6 +107,8 @@ export class OpenAiCodexHandler implements ApiHandler {
 		// Reset state for this request
 		this.pendingToolCallId = undefined
 		this.pendingToolCallName = undefined
+		this.streamedTextItemIds.clear()
+		this.sawUnidentifiedTextDelta = false
 
 		// Get access token from OAuth manager
 		let accessToken = await openAiCodexOAuthManager.getAccessToken()
@@ -618,6 +624,12 @@ export class OpenAiCodexHandler implements ApiHandler {
 		// Handle text deltas
 		if (event?.type === "response.text.delta" || event?.type === "response.output_text.delta") {
 			if (event?.delta) {
+				const itemId = event.item_id
+				if (typeof itemId === "string" && itemId.length > 0) {
+					this.streamedTextItemIds.add(itemId)
+				} else {
+					this.sawUnidentifiedTextDelta = true
+				}
 				yield { type: "text", text: event.delta }
 			}
 			return
@@ -680,11 +692,21 @@ export class OpenAiCodexHandler implements ApiHandler {
 					}
 				}
 
-				if (item.type === "text" && item.text) {
+				const itemId = item.id || event.item_id
+				const hasStreamedText =
+					this.sawUnidentifiedTextDelta ||
+					(typeof itemId === "string" ? this.streamedTextItemIds.has(itemId) : this.streamedTextItemIds.size > 0)
+
+				if (item.type === "text" && item.text && event.type === "response.output_item.done" && !hasStreamedText) {
 					yield { type: "text", text: item.text }
 				} else if (item.type === "reasoning" && item.text) {
 					yield { type: "reasoning", reasoning: item.text }
-				} else if (item.type === "message" && Array.isArray(item.content)) {
+				} else if (
+					item.type === "message" &&
+					Array.isArray(item.content) &&
+					event.type === "response.output_item.done" &&
+					!hasStreamedText
+				) {
 					for (const content of item.content) {
 						if ((content?.type === "text" || content?.type === "output_text") && content?.text) {
 							yield { type: "text", text: content.text }
