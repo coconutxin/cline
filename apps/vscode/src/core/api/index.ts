@@ -198,6 +198,7 @@ function createHandlerForProvider(
 				onRetryAttempt: options.onRetryAttempt,
 				reasoningEffort: mode === "plan" ? options.planModeReasoningEffort : options.actModeReasoningEffort,
 				apiModelId: mode === "plan" ? options.planModeApiModelId : options.actModeApiModelId,
+				serviceTier: mode === "plan" ? options.planModeOpenAiCodexServiceTier : options.actModeOpenAiCodexServiceTier,
 			})
 		case "deepseek":
 			return new DeepSeekHandler({

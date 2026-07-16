@@ -1,6 +1,6 @@
-import { openAiCodexModels } from "@shared/api"
+import { openAiCodexFastServiceTier, openAiCodexModels, supportsOpenAiCodexFastMode } from "@shared/api"
 import { Mode } from "@shared/storage/types"
-import { VSCodeButton } from "@vscode/webview-ui-toolkit/react"
+import { VSCodeButton, VSCodeCheckbox } from "@vscode/webview-ui-toolkit/react"
 import { useExtensionState } from "@/context/ExtensionStateContext"
 import { AccountServiceClient } from "@/services/grpc-client"
 import { ModelInfoView } from "../common/ModelInfoView"
@@ -25,6 +25,11 @@ export const OpenAiCodexProvider = ({ showModelOptions, isPopup, currentMode }: 
 
 	const { selectedModelId, selectedModelInfo } = normalizeApiConfiguration(apiConfiguration, currentMode)
 	const showReasoningEffort = supportsReasoningEffortForModelId(selectedModelId, true)
+	const supportsFastMode = supportsOpenAiCodexFastMode(selectedModelId)
+	const serviceTier =
+		currentMode === "plan"
+			? apiConfiguration?.planModeOpenAiCodexServiceTier
+			: apiConfiguration?.actModeOpenAiCodexServiceTier
 
 	const handleSignIn = async () => {
 		try {
@@ -86,6 +91,22 @@ export const OpenAiCodexProvider = ({ showModelOptions, isPopup, currentMode }: 
 							allowedEfforts={selectedModelInfo.reasoningEffortOptions}
 							currentMode={currentMode}
 						/>
+					)}
+					{supportsFastMode && (
+						<VSCodeCheckbox
+							checked={serviceTier === openAiCodexFastServiceTier}
+							onChange={(event: any) =>
+								handleModeFieldChange(
+									{
+										plan: "planModeOpenAiCodexServiceTier",
+										act: "actModeOpenAiCodexServiceTier",
+									},
+									event.target.checked === true ? openAiCodexFastServiceTier : undefined,
+									currentMode,
+								)
+							}>
+							Fast mode — 1.5× speed, increased usage
+						</VSCodeCheckbox>
 					)}
 
 					<ModelInfoView isPopup={isPopup} modelInfo={selectedModelInfo} selectedModelId={selectedModelId} />

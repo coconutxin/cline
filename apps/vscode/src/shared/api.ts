@@ -2505,6 +2505,20 @@ export const openAiCodexModels = {
 	},
 } as const satisfies Record<string, ModelInfo>
 
+export const openAiCodexFastServiceTier = "priority"
+
+const OPEN_AI_CODEX_FAST_MODE_MODEL_IDS = new Set<OpenAiCodexModelId>([
+	"gpt-5.6-sol",
+	"gpt-5.6-terra",
+	"gpt-5.6-luna",
+	"gpt-5.5",
+	"gpt-5.4",
+])
+
+export function supportsOpenAiCodexFastMode(modelId: string): boolean {
+	return OPEN_AI_CODEX_FAST_MODE_MODEL_IDS.has(modelId as OpenAiCodexModelId)
+}
+
 // Azure OpenAI
 // https://learn.microsoft.com/en-us/azure/ai-services/openai/api-version-deprecation
 // https://learn.microsoft.com/en-us/azure/ai-services/openai/reference#api-specs

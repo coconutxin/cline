@@ -436,7 +436,7 @@
 	"lint-staged": {
 		"src/shared/storage/state-keys.ts": [
 			"node scripts/generate-state-proto.mjs",
-			"git add proto/cline/state.proto"
+			"git add -- :/apps/vscode/proto/cline/state.proto"
 		],
 		"*": [
 			"biome check --config-path ./biome.jsonc --write --staged --no-errors-on-unmatched --files-ignore-unknown=true"

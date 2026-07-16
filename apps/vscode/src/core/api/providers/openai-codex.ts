@@ -1,4 +1,11 @@
-import { type ModelInfo, type OpenAiCodexModelId, openAiCodexDefaultModelId, openAiCodexModels } from "@shared/api"
+import {
+	type ModelInfo,
+	type OpenAiCodexModelId,
+	openAiCodexDefaultModelId,
+	openAiCodexFastServiceTier,
+	openAiCodexModels,
+	supportsOpenAiCodexFastMode,
+} from "@shared/api"
 import { OPENAI_REASONING_EFFORT_OPTIONS } from "@shared/storage/types"
 import OpenAI from "openai"
 import type { ChatCompletionTool } from "openai/resources/chat/completions"
@@ -27,6 +34,7 @@ const CODEX_RESPONSES_WEBSOCKET_URL = "wss://chatgpt.com/backend-api/codex/respo
 interface OpenAiCodexHandlerOptions extends CommonApiHandlerOptions {
 	reasoningEffort?: string
 	apiModelId?: string
+	serviceTier?: string
 }
 
 /**
@@ -192,6 +200,9 @@ export class OpenAiCodexHandler implements ApiHandler {
 			store: false,
 			instructions: systemPrompt,
 			...(previousResponseId ? { previous_response_id: previousResponseId } : {}),
+			...(this.options.serviceTier === openAiCodexFastServiceTier && supportsOpenAiCodexFastMode(model.id)
+				? { service_tier: openAiCodexFastServiceTier }
+				: {}),
 			...(includeReasoning ? { include: ["reasoning.encrypted_content"] } : {}),
 			...(includeReasoning
 				? {

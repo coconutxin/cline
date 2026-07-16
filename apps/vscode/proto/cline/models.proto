@@ -294,6 +294,7 @@ message ModelsApiOptions {
   optional OpenRouterModelInfo plan_mode_cline_model_info = 136;
   optional string plan_mode_cline_pass_model_id = 137;
   optional OpenRouterModelInfo plan_mode_cline_pass_model_info = 138;
+  optional string plan_mode_open_ai_codex_service_tier = 139;
 
   // Act mode configurations
   optional ApiProvider act_mode_api_provider = 200;
@@ -335,6 +336,7 @@ message ModelsApiOptions {
   optional OpenRouterModelInfo act_mode_cline_model_info = 236;
   optional string act_mode_cline_pass_model_id = 237;
   optional OpenRouterModelInfo act_mode_cline_pass_model_info = 238;
+  optional string act_mode_open_ai_codex_service_tier = 239;
 }
 
 // Request for updating API configuration (legacy - uses combined configuration)
@@ -659,6 +661,7 @@ message ModelsApiConfiguration {
   optional OpenRouterModelInfo plan_mode_cline_model_info = 141;
   optional string plan_mode_cline_pass_model_id = 142;
   optional OpenRouterModelInfo plan_mode_cline_pass_model_info = 143;
+  optional string plan_mode_open_ai_codex_service_tier = 144;
 
   // Act mode configurations
   optional ApiProvider act_mode_api_provider = 200;
@@ -705,4 +708,5 @@ message ModelsApiConfiguration {
   optional OpenRouterModelInfo act_mode_cline_model_info = 241;
   optional string act_mode_cline_pass_model_id = 242;
   optional OpenRouterModelInfo act_mode_cline_pass_model_info = 243;
+  optional string act_mode_open_ai_codex_service_tier = 244;
 }
