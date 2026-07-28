@@ -1,4 +1,9 @@
-import { openAiCodexFastServiceTier, openAiCodexModels, supportsOpenAiCodexFastMode } from "@shared/api"
+import {
+	getOpenAiCodexServiceTier,
+	openAiCodexFastServiceTier,
+	openAiCodexModels,
+	supportsOpenAiCodexFastMode,
+} from "@shared/api"
 import { Mode } from "@shared/storage/types"
 import { VSCodeButton, VSCodeCheckbox } from "@vscode/webview-ui-toolkit/react"
 import { useExtensionState } from "@/context/ExtensionStateContext"
@@ -101,7 +106,7 @@ export const OpenAiCodexProvider = ({ showModelOptions, isPopup, currentMode }: 
 										plan: "planModeOpenAiCodexServiceTier",
 										act: "actModeOpenAiCodexServiceTier",
 									},
-									event.target.checked === true ? openAiCodexFastServiceTier : undefined,
+									getOpenAiCodexServiceTier(event.target.checked === true),
 									currentMode,
 								)
 							}>

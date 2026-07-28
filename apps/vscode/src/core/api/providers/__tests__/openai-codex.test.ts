@@ -1,4 +1,4 @@
-import { openAiCodexFastServiceTier } from "@shared/api"
+import { getOpenAiCodexServiceTier, openAiCodexDefaultServiceTier, openAiCodexFastServiceTier } from "@shared/api"
 import { expect } from "chai"
 import { OpenAiCodexHandler } from "../openai-codex"
 
@@ -77,8 +77,16 @@ describe("OpenAiCodexHandler", () => {
 		expect(buildRequestBody(handler)).to.include({ service_tier: openAiCodexFastServiceTier })
 	})
 
+	it("maps a disabled Fast mode checkbox to a persistable default service tier", () => {
+		expect(getOpenAiCodexServiceTier(false)).to.equal(openAiCodexDefaultServiceTier)
+		expect(getOpenAiCodexServiceTier(false)).not.to.equal(undefined)
+	})
+
 	it("omits the service tier when Fast mode is not enabled", () => {
-		const handler = new OpenAiCodexHandler({ apiModelId: "gpt-5.4" })
+		const handler = new OpenAiCodexHandler({
+			apiModelId: "gpt-5.4",
+			serviceTier: openAiCodexDefaultServiceTier,
+		})
 
 		expect(buildRequestBody(handler)).not.to.have.property("service_tier")
 	})

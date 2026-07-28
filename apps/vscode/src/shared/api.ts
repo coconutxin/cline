@@ -2755,7 +2755,14 @@ export const openAiCodexModels = {
 	},
 } as const satisfies Record<string, ModelInfo>
 
+export const openAiCodexDefaultServiceTier = "default"
 export const openAiCodexFastServiceTier = "priority"
+
+export function getOpenAiCodexServiceTier(
+	fastModeEnabled: boolean,
+): typeof openAiCodexDefaultServiceTier | typeof openAiCodexFastServiceTier {
+	return fastModeEnabled ? openAiCodexFastServiceTier : openAiCodexDefaultServiceTier
+}
 
 const OPEN_AI_CODEX_FAST_MODE_MODEL_IDS = new Set<OpenAiCodexModelId>([
 	"gpt-5.6-sol",
