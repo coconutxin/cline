@@ -26,6 +26,31 @@ export interface ClineRecommendedModelsData {
 }
 
 const RECOMMENDED_MODELS_CACHE_TTL_MS = 60 * 60 * 1000;
+const CLINE_PASS_MODEL_ID_ALIAS_RULES = [
+	{ canonicalPrefix: "cline-pass/zai/", aliasPrefix: "cline-pass/z-ai/" },
+] as const;
+
+function normalizeClineProviderRecommendedModelId(modelId: string): string {
+	const zaiPrefix = "zai/";
+	return modelId.startsWith(zaiPrefix) ? `z-ai/${modelId.slice(zaiPrefix.length)}` : modelId;
+}
+
+function normalizeClineProviderRecommendedModels(
+	models: ClineRecommendedModelData[],
+): ClineRecommendedModelData[] {
+	return models.map((model) => {
+		const id = normalizeClineProviderRecommendedModelId(model.id);
+		if (id === model.id) {
+			return model;
+		}
+
+		return {
+			...model,
+			id,
+			name: model.name === model.id ? id : model.name,
+		};
+	});
+}
 
 let pendingRefresh: Promise<ClineRecommendedModelsData> | null = null;
 let inMemoryCache: {
@@ -44,6 +69,26 @@ function useUpstreamRecommendedModels(): boolean {
 	return featureFlagsService.getBooleanFlagEnabled(
 		FeatureFlag.EXTENSION_CLINE_MODELS_ENDPOINT,
 	);
+}
+
+function preferCanonicalRecommendedModels(
+	models: ClineRecommendedModelData[],
+): ClineRecommendedModelData[] {
+	const modelIds = new Set(models.map((model) => model.id));
+	return models.filter((model) => {
+		for (const rule of CLINE_PASS_MODEL_ID_ALIAS_RULES) {
+			if (!model.id.startsWith(rule.aliasPrefix)) {
+				continue;
+			}
+
+			const canonicalModelId = `${rule.canonicalPrefix}${model.id.slice(rule.aliasPrefix.length)}`;
+			if (modelIds.has(canonicalModelId)) {
+				return false;
+			}
+		}
+
+		return true;
+	});
 }
 
 function normalizeRecommendedModel(
@@ -105,7 +150,11 @@ function normalizeRecommendedModelsResponse(
 		.map((model) => normalizeRecommendedModel(model))
 		.filter((model): model is ClineRecommendedModelData => model !== null);
 
-	return { recommended, free, clinePass };
+	return {
+		recommended: normalizeClineProviderRecommendedModels(recommended),
+		free: normalizeClineProviderRecommendedModels(free),
+		clinePass: preferCanonicalRecommendedModels(clinePass),
+	};
 }
 
 export async function refreshClineRecommendedModels(): Promise<ClineRecommendedModelsData> {

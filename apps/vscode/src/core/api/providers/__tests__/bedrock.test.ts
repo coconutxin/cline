@@ -215,9 +215,19 @@ describe("AwsBedrockHandler", () => {
 			bedrockModels["anthropic.claude-opus-4-8:1m"].supportsGlobalEndpoint.should.equal(true)
 		})
 
+		it("should mark Bedrock Opus 5 variants as global-endpoint capable", () => {
+			bedrockModels["anthropic.claude-opus-5"].supportsGlobalEndpoint.should.equal(true)
+			bedrockModels["anthropic.claude-opus-5:1m"].supportsGlobalEndpoint.should.equal(true)
+		})
+
 		it("should mark Bedrock Fable 5 variants as global-endpoint capable", () => {
 			bedrockModels["anthropic.claude-fable-5"].supportsGlobalEndpoint.should.equal(true)
 			bedrockModels["anthropic.claude-fable-5:1m"].supportsGlobalEndpoint.should.equal(true)
+		})
+
+		it("should mark Bedrock Sonnet 5 variants as global-endpoint capable", () => {
+			bedrockModels["anthropic.claude-sonnet-5"].supportsGlobalEndpoint.should.equal(true)
+			bedrockModels["anthropic.claude-sonnet-5:1m"].supportsGlobalEndpoint.should.equal(true)
 		})
 
 		it("should include Vertex Opus 4.7 variants in the derived global model list", () => {
@@ -232,6 +242,13 @@ describe("AwsBedrockHandler", () => {
 			vertexModels["claude-opus-4-8:1m"].supportsGlobalEndpoint.should.equal(true)
 			vertexGlobalModels.should.have.property("claude-opus-4-8")
 			vertexGlobalModels.should.have.property("claude-opus-4-8:1m")
+		})
+
+		it("should include Vertex Opus 5 variants in the derived global model list", () => {
+			vertexModels["claude-opus-5"].supportsGlobalEndpoint.should.equal(true)
+			vertexModels["claude-opus-5:1m"].supportsGlobalEndpoint.should.equal(true)
+			vertexGlobalModels.should.have.property("claude-opus-5")
+			vertexGlobalModels.should.have.property("claude-opus-5:1m")
 		})
 
 		it("should include Vertex Fable 5 variants in the derived global model list", () => {
@@ -988,6 +1005,19 @@ describe("AwsBedrockHandler", () => {
 
 			const modelId = await jpHandler.getModelId()
 			modelId.should.equal("jp.anthropic.claude-sonnet-4-6")
+		})
+
+		it("should apply JP cross-region prefix for sonnet 5", async () => {
+			const jpOptions: AwsBedrockHandlerOptions = {
+				...mockOptions,
+				awsUseCrossRegionInference: true,
+				apiModelId: "anthropic.claude-sonnet-5",
+				awsRegion: "ap-northeast-1",
+			}
+			const jpHandler = new AwsBedrockHandler(jpOptions)
+
+			const modelId = await jpHandler.getModelId()
+			modelId.should.equal("jp.anthropic.claude-sonnet-5")
 		})
 
 		it("should apply global cross-region prefix for supported models", async () => {

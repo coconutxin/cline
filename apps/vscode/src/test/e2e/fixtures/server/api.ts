@@ -94,8 +94,8 @@ export const E2E_MOCK_CLINE_RECOMMENDED_MODELS = {
 	],
 	recommended: [
 		{
-			id: "anthropic/claude-sonnet-4.6",
-			name: "anthropic/claude-sonnet-4.6",
+			id: "anthropic/claude-sonnet-5",
+			name: "anthropic/claude-sonnet-5",
 			description: "Recommended model for e2e onboarding",
 			tags: ["BEST"],
 		},
@@ -123,12 +123,12 @@ export const E2E_MOCK_CLINE_MODELS = [
 		supported_parameters: [],
 	},
 	{
-		id: "anthropic/claude-sonnet-4.6",
-		name: "anthropic/claude-sonnet-4.6",
+		id: "anthropic/claude-sonnet-5",
+		name: "anthropic/claude-sonnet-5",
 		description: "Recommended model for e2e onboarding",
 		context_length: 200_000,
 		top_provider: {
-			max_completion_tokens: 64_000,
+			max_completion_tokens: 128_000,
 			context_length: 200_000,
 			is_moderated: false,
 		},
@@ -136,10 +136,10 @@ export const E2E_MOCK_CLINE_MODELS = [
 			modality: "text->text",
 		},
 		pricing: {
-			prompt: "0.000003",
-			completion: "0.000015",
-			input_cache_read: "0.0000003",
-			input_cache_write: "0.00000375",
+			prompt: "0.000002",
+			completion: "0.00001",
+			input_cache_read: "0.0000002",
+			input_cache_write: "0.0000025",
 		},
 		supported_parameters: ["include_reasoning"],
 	},

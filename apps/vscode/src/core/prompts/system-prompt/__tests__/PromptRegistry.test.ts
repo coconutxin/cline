@@ -5,7 +5,7 @@ import { ClineDefaultTool } from "@/shared/tools"
 import { ClineToolSet } from ".."
 import { PromptRegistry } from "../registry/PromptRegistry"
 import type { SystemPromptContext } from "../types"
-import { mockProviderInfo } from "./integration.test"
+import { mockProviderInfo } from "./test-fixtures"
 
 describe("PromptRegistry", () => {
 	let registry: PromptRegistry

@@ -21,10 +21,12 @@ import {
 	CLAUDE_OPUS_1M_TIERS,
 	CLAUDE_SONNET_1M_TIERS,
 	openRouterClaudeFable51mModelId,
+	openRouterClaudeOpus51mModelId,
 	openRouterClaudeOpus461mModelId,
 	openRouterClaudeOpus471mModelId,
 	openRouterClaudeOpus481mModelId,
 	openRouterClaudeSonnet41mModelId,
+	openRouterClaudeSonnet51mModelId,
 	openRouterClaudeSonnet451mModelId,
 	openRouterClaudeSonnet461mModelId,
 } from "@/shared/api";
@@ -93,6 +95,37 @@ interface ClineRawModelInfo {
 // Track pending refresh promise to prevent duplicate concurrent fetches
 let pendingRefresh: Promise<Record<string, ModelInfo>> | null = null;
 
+interface ModelIdAliasRule {
+	canonicalPrefix: string
+	aliasPrefix: string
+}
+
+// Mirrors @cline/llms VERCEL_OPENROUTER_MODEL_ID_ALIAS_RULES.
+const VERCEL_OPENROUTER_MODEL_ID_ALIAS_RULES = [
+	{ canonicalPrefix: "zai/", aliasPrefix: "z-ai/" },
+] as const satisfies readonly ModelIdAliasRule[]
+
+function preferCanonicalModelIds<T>(models: Record<string, T>, rules: readonly ModelIdAliasRule[]): Record<string, T> {
+	return Object.fromEntries(
+		Object.entries(models).filter(([modelId]) => {
+			for (const rule of rules) {
+				if (!modelId.startsWith(rule.aliasPrefix)) {
+					continue
+				}
+				const canonicalModelId = `${rule.canonicalPrefix}${modelId.slice(rule.aliasPrefix.length)}`
+				if (canonicalModelId in models) {
+					return false
+				}
+			}
+			return true
+		}),
+	)
+}
+
+function preferClineCanonicalModelIds(models: Record<string, ModelInfo>): Record<string, ModelInfo> {
+	return preferCanonicalModelIds(models, VERCEL_OPENROUTER_MODEL_ID_ALIAS_RULES)
+}
+
 async function fetchRawClineModels(): Promise<ClineRawModelInfo[]> {
 	const apiBaseUrl = ClineEnv.config().apiBaseUrl;
 	const response = await axios.get(
@@ -121,7 +154,7 @@ export async function refreshClineModels(
 			FeatureFlag.EXTENSION_CLINE_MODELS_ENDPOINT,
 		);
 	if (!shouldUseClineEndpointSource) {
-		return refreshOpenRouterModels(controller);
+		return preferClineCanonicalModelIds(await refreshOpenRouterModels(controller));
 	}
 
 	// Check in-memory cache first
@@ -205,6 +238,15 @@ async function fetchAndCacheClineModels(): Promise<Record<string, ModelInfo>> {
 
 			// Apply model-specific overrides for known models
 			switch (rawModel.id) {
+				case "anthropic/claude-sonnet-5":
+				case "anthropic/claude-5-sonnet":
+					modelInfo.contextWindow = 200_000
+					modelInfo.supportsPromptCache = true
+					modelInfo.inputPrice = 2.0
+					modelInfo.outputPrice = 10.0
+					modelInfo.cacheWritesPrice = 2.5
+					modelInfo.cacheReadsPrice = 0.2
+					break
 				case "anthropic/claude-sonnet-4.6":
 				case "anthropic/claude-4.6-sonnet":
 				case "anthropic/claude-sonnet-4.5":
@@ -221,6 +263,15 @@ async function fetchAndCacheClineModels(): Promise<Record<string, ModelInfo>> {
 					modelInfo.supportsPromptCache = true;
 					modelInfo.cacheWritesPrice = 3.75;
 					modelInfo.cacheReadsPrice = 0.3;
+					break;
+				case "anthropic/claude-opus-5":
+				case "anthropic/claude-5-opus":
+					modelInfo.contextWindow = 200_000;
+					modelInfo.supportsPromptCache = true;
+					modelInfo.inputPrice = 5.0;
+					modelInfo.outputPrice = 25.0;
+					modelInfo.cacheWritesPrice = 6.25;
+					modelInfo.cacheReadsPrice = 0.5;
 					break;
 				case "anthropic/claude-opus-4.6":
 				case "anthropic/claude-opus-4.7":
@@ -304,12 +355,17 @@ async function fetchAndCacheClineModels(): Promise<Record<string, ModelInfo>> {
 				rawModel.id === "anthropic/claude-sonnet-4" ||
 				rawModel.id === "anthropic/claude-sonnet-4.5" ||
 				rawModel.id === "anthropic/claude-sonnet-4.6" ||
-				rawModel.id === "anthropic/claude-4.6-sonnet"
+				rawModel.id === "anthropic/claude-4.6-sonnet" ||
+				rawModel.id === "anthropic/claude-sonnet-5" ||
+				rawModel.id === "anthropic/claude-5-sonnet"
 			) {
 				const claudeSonnet1mModelInfo = cloneDeep(modelInfo);
 				claudeSonnet1mModelInfo.contextWindow = 1_000_000;
 				claudeSonnet1mModelInfo.tiers = CLAUDE_SONNET_1M_TIERS;
 
+				if (rawModel.id === "anthropic/claude-sonnet-5" || rawModel.id === "anthropic/claude-5-sonnet") {
+					models[openRouterClaudeSonnet51mModelId] = claudeSonnet1mModelInfo
+				}
 				if (rawModel.id === "anthropic/claude-sonnet-4") {
 					models[openRouterClaudeSonnet41mModelId] = claudeSonnet1mModelInfo;
 				}
@@ -343,6 +399,12 @@ async function fetchAndCacheClineModels(): Promise<Record<string, ModelInfo>> {
 					models[openRouterClaudeOpus481mModelId] = claudeOpus1mModelInfo;
 				}
 			}
+			if (rawModel.id === "anthropic/claude-opus-5" || rawModel.id === "anthropic/claude-5-opus") {
+				const claudeOpus51mModelInfo = cloneDeep(modelInfo)
+				claudeOpus51mModelInfo.contextWindow = 1_000_000
+				claudeOpus51mModelInfo.tiers = CLAUDE_OPUS_1M_TIERS
+				models[openRouterClaudeOpus51mModelId] = claudeOpus51mModelInfo
+			}
 			if (rawModel.id === "anthropic/claude-fable-5") {
 				const claudeFable1mModelInfo = cloneDeep(modelInfo);
 				claudeFable1mModelInfo.contextWindow = 1_000_000;
@@ -353,7 +415,9 @@ async function fetchAndCacheClineModels(): Promise<Record<string, ModelInfo>> {
 		if (Object.keys(models).length === 0) {
 			throw new Error("No Cline models returned from API");
 		}
+
 		// Save models and cache them in memory
+		models = preferClineCanonicalModelIds(models);
 		await fs.writeFile(clineModelsFilePath, JSON.stringify(models));
 		Logger.log("Cline models fetched and saved");
 	} catch (error) {
@@ -374,6 +438,7 @@ async function fetchAndCacheClineModels(): Promise<Record<string, ModelInfo>> {
 
 	// Avoid poisoning in-memory cache with an empty model map after transient failures.
 	if (Object.keys(models).length > 0) {
+		models = preferClineCanonicalModelIds(models);
 		StateManager.get().setModelsCache("cline", models);
 	}
 

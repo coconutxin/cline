@@ -2625,6 +2625,11 @@ export class Task {
 				const isOrgClinePassRestrictionError = clineError.isErrorType(
 					ClineErrorType.OrgClinePassRestriction,
 				);
+				// ClinePass period limits reset in hours/days — auto-retrying is
+				// pointless and only delays the actionable error UI.
+				const isClinePassLimitError = clineError.isErrorType(
+					ClineErrorType.ClinePassLimit,
+				);
 
 				// Check if this is a Cline provider insufficient credits error - don't auto-retry these
 				const isClineProviderInsufficientCredits = (() => {
@@ -2652,6 +2657,7 @@ export class Task {
 					!quotaExceeded &&
 					!isEntitlementError &&
 					!isOrgClinePassRestrictionError &&
+					!isClinePassLimitError &&
 					this.taskState.autoRetryAttempts < 3;
 				if (shouldRetry) {
 					// Auto-retry enabled with max 3 attempts: automatically approve the retry
@@ -2715,7 +2721,8 @@ export class Task {
 						!isSpendLimitError &&
 						!quotaExceeded &&
 						!isEntitlementError &&
-						!isOrgClinePassRestrictionError;
+						!isOrgClinePassRestrictionError &&
+						!isClinePassLimitError;
 					if (showRetry) {
 						await this.say(
 							"error_retry",
@@ -2982,7 +2989,8 @@ export class Task {
 				this.taskState.consecutiveMistakeCount,
 				maxConsecutiveMistakes,
 			);
-			const mistakeLimitMessage = `This may indicate a failure in Cline's thought process or inability to use a tool properly, which can be mitigated with some user guidance (e.g. "Try breaking down the task into smaller steps").`;
+			const mistakeLimitMessage =
+				"Cline hit repeated tool call failures. Try guiding it with a new prompt.";
 			const resetMistakeLimitState = () => {
 				this.taskState.consecutiveMistakeCount = 0;
 				this.taskState.consecutiveIdenticalToolCount = 0;
@@ -2990,6 +2998,14 @@ export class Task {
 				this.taskState.lastToolParams = "";
 			};
 
+			telemetryService.captureMistakeLimitReached({
+				ulid: this.ulid,
+				model: model.id,
+				provider: providerId,
+				consecutiveMistakes: this.taskState.consecutiveMistakeCount,
+				maxConsecutiveMistakes,
+				yoloMode: this.stateManager.getGlobalSettingsKey("yoloModeToggled"),
+			});
 			// In yolo mode, don't wait for user input - fail the task
 			if (this.stateManager.getGlobalSettingsKey("yoloModeToggled")) {
 				const errorMessage =

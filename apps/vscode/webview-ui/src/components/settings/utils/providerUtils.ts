@@ -9,6 +9,7 @@ import {
 	basetenModels,
 	bedrockDefaultModelId,
 	bedrockModels,
+	buildModelInfoNameMap,
 	cerebrasDefaultModelId,
 	cerebrasModels,
 	claudeCodeDefaultModelId,
@@ -23,6 +24,7 @@ import {
 	fireworksModels,
 	geminiDefaultModelId,
 	geminiModels,
+	getVertexCustomModelInfo,
 	groqDefaultModelId,
 	groqModels,
 	hicapModelInfoSaneDefaults,
@@ -261,8 +263,24 @@ export function normalizeApiConfiguration(
 			}
 			return getProviderData(bedrockModels, bedrockDefaultModelId);
 		}
-		case "vertex":
+		case "vertex": {
+			const vertexCustomModelSelected =
+				currentMode === "plan"
+					? apiConfiguration?.planModeVertexCustomModelSelected
+					: apiConfiguration?.actModeVertexCustomModelSelected;
+			if (vertexCustomModelSelected) {
+				const vertexCustomModelInfo =
+					currentMode === "plan"
+						? apiConfiguration?.planModeVertexCustomModelInfo
+						: apiConfiguration?.actModeVertexCustomModelInfo;
+				return {
+					selectedProvider: provider,
+					selectedModelId: modelId || "",
+					selectedModelInfo: getVertexCustomModelInfo(vertexCustomModelInfo),
+				};
+			}
 			return getProviderData(vertexModels, vertexDefaultModelId);
+		}
 		case "gemini":
 			return getProviderData(geminiModels, geminiDefaultModelId);
 		case "openai-native":
@@ -354,23 +372,25 @@ export function normalizeApiConfiguration(
 				currentMode === "plan"
 					? apiConfiguration?.planModeClinePassModelId
 					: apiConfiguration?.actModeClinePassModelId;
-			const clinePassModelId = configuredClinePassModelId?.startsWith(
-				"cline-pass/",
-			)
-				? configuredClinePassModelId
-				: clinePassDefaultModelId;
+			// ClinePass users may also select Cline free models (OpenRouter-style ids
+			// without the cline-pass/ prefix), so pass any configured id through.
+			const clinePassModelId =
+				configuredClinePassModelId || clinePassDefaultModelId;
 			const clinePassModelInfo =
-				(currentMode === "plan"
+				currentMode === "plan"
 					? apiConfiguration?.planModeClinePassModelInfo
-					: apiConfiguration?.actModeClinePassModelInfo) ||
-				resolveClinePassModelInfo(
-					clinePassModelId,
-					options.clinePassModelInfoByName,
-				);
+					: apiConfiguration?.actModeClinePassModelInfo;
+			const clinePassModelInfoByName = clinePassModelInfo
+				? buildModelInfoNameMap({ [clinePassModelId]: clinePassModelInfo })
+				: options.clinePassModelInfoByName;
+			const resolvedClinePassModelInfo = resolveClinePassModelInfo(
+				clinePassModelId,
+				clinePassModelInfoByName,
+			);
 			return {
 				selectedProvider: provider,
 				selectedModelId: clinePassModelId,
-				selectedModelInfo: clinePassModelInfo,
+				selectedModelInfo: resolvedClinePassModelInfo,
 			};
 		}
 		case "openai": {
@@ -705,12 +725,17 @@ export function getModeSpecificFields(
 			awsBedrockCustomSelected: undefined,
 			awsBedrockCustomModelBaseId: undefined,
 
+			// Vertex custom model fields
+			vertexCustomModelSelected: undefined,
+			vertexCustomModelInfo: undefined,
+
 			// Huawei Cloud Maas Model Info
 			huaweiCloudMaasModelInfo: undefined,
 
 			// Other mode-specific fields
 			thinkingBudgetTokens: undefined,
 			reasoningEffort: undefined,
+			openAiCodexServiceTier: undefined,
 		};
 	}
 
@@ -876,6 +901,16 @@ export function getModeSpecificFields(
 				? apiConfiguration.planModeAwsBedrockCustomModelBaseId
 				: apiConfiguration.actModeAwsBedrockCustomModelBaseId,
 
+		// Vertex custom model fields
+		vertexCustomModelSelected:
+			mode === "plan"
+				? apiConfiguration.planModeVertexCustomModelSelected
+				: apiConfiguration.actModeVertexCustomModelSelected,
+		vertexCustomModelInfo:
+			mode === "plan"
+				? apiConfiguration.planModeVertexCustomModelInfo
+				: apiConfiguration.actModeVertexCustomModelInfo,
+
 		// Huawei Cloud Maas Model Info
 		huaweiCloudMaasModelInfo:
 			mode === "plan"
@@ -891,6 +926,10 @@ export function getModeSpecificFields(
 			mode === "plan"
 				? apiConfiguration.planModeReasoningEffort
 				: apiConfiguration.actModeReasoningEffort,
+		openAiCodexServiceTier:
+			mode === "plan"
+				? apiConfiguration.planModeOpenAiCodexServiceTier
+				: apiConfiguration.actModeOpenAiCodexServiceTier,
 		// Oracle Code Assist
 		ocaModelInfo:
 			mode === "plan"
@@ -1033,6 +1072,29 @@ export async function syncModeConfigurations(
 			updates.actModeAwsBedrockCustomModelBaseId =
 				sourceFields.awsBedrockCustomModelBaseId;
 			break;
+
+		case "vertex":
+			updates.planModeApiModelId = sourceFields.apiModelId;
+			updates.actModeApiModelId = sourceFields.apiModelId;
+			updates.planModeVertexCustomModelSelected =
+				sourceFields.vertexCustomModelSelected;
+			updates.actModeVertexCustomModelSelected =
+				sourceFields.vertexCustomModelSelected;
+			updates.planModeVertexCustomModelInfo =
+				sourceFields.vertexCustomModelInfo;
+			updates.actModeVertexCustomModelInfo =
+				sourceFields.vertexCustomModelInfo;
+			break;
+
+		case "openai-codex":
+			updates.planModeApiModelId = sourceFields.apiModelId;
+			updates.actModeApiModelId = sourceFields.apiModelId;
+			updates.planModeOpenAiCodexServiceTier =
+				sourceFields.openAiCodexServiceTier;
+			updates.actModeOpenAiCodexServiceTier =
+				sourceFields.openAiCodexServiceTier;
+			break;
+
 		case "huawei-cloud-maas":
 			updates.planModeHuaweiCloudMaasModelId =
 				sourceFields.huaweiCloudMaasModelId;
@@ -1088,10 +1150,8 @@ export async function syncModeConfigurations(
 		// Providers that use apiProvider + apiModelId fields
 		case "anthropic":
 		case "claude-code":
-		case "vertex":
 		case "gemini":
 		case "openai-native":
-		case "openai-codex":
 		case "deepseek":
 		case "qwen":
 		case "doubao":

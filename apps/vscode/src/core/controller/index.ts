@@ -11,6 +11,7 @@ import { McpHub } from "@services/mcp/McpHub";
 import type { ApiProvider, ModelInfo } from "@shared/api";
 import type { ChatContent } from "@shared/ChatContent";
 import type { ExtensionState, Platform } from "@shared/ExtensionMessage";
+import { DEFAULT_FOCUS_CHAIN_SETTINGS } from "@shared/FocusChainSettings";
 import type { HistoryItem } from "@shared/HistoryItem";
 import type { McpMarketplaceCatalog, McpMarketplaceItem } from "@shared/mcp";
 import { type Settings } from "@shared/storage/state-keys";
@@ -647,8 +648,7 @@ export class Controller {
 
 			// On login we route the user to the managed "cline" provider, but preserve a
 			// "cline-pass" selection made during onboarding (otherwise it would be clobbered).
-			// A "cline-pass" provider can only be set when the ext-cline-pass flag is on, so
-			// non-ClinePass logins are unaffected.
+			// Non-ClinePass logins are unaffected because they do not persist "cline-pass".
 			const planProvider: ApiProvider =
 				currentApiConfiguration.planModeApiProvider === "cline-pass"
 					? "cline-pass"
@@ -1049,7 +1049,8 @@ export class Controller {
 		const browserSettings =
 			this.stateManager.getGlobalSettingsKey("browserSettings");
 		const focusChainSettings =
-			this.stateManager.getGlobalSettingsKey("focusChainSettings");
+			this.stateManager.getGlobalSettingsKey("focusChainSettings") ??
+			DEFAULT_FOCUS_CHAIN_SETTINGS;
 		const preferredLanguage =
 			this.stateManager.getGlobalSettingsKey("preferredLanguage");
 		const mode = this.stateManager.getGlobalSettingsKey("mode");

@@ -1,8 +1,13 @@
-import { ApiConfiguration, clinePassDefaultModelId, ModelInfo, QwenApiRegions, resolveClinePassModelInfo } from "@shared/api"
+import {
+	ApiConfiguration,
+	buildModelInfoNameMap,
+	clinePassDefaultModelId,
+	ModelInfo,
+	QwenApiRegions,
+	resolveClinePassModelInfo,
+} from "@shared/api"
 import { Mode } from "@shared/storage/types"
-import { featureFlagsService } from "@/services/feature-flags"
 import { ClineStorageMessage } from "@/shared/messages/content"
-import { FeatureFlag } from "@/shared/services/feature-flags/feature-flags"
 import { Logger } from "@/shared/services/Logger"
 import { ClineTool } from "@/shared/tools"
 import { AIhubmixHandler } from "./providers/aihubmix"
@@ -80,10 +85,7 @@ function createHandlerForProvider(
 	options: Omit<ApiConfiguration, "apiProvider">,
 	mode: Mode,
 ): ApiHandler {
-	const effectiveApiProvider =
-		apiProvider === "cline-pass" && !featureFlagsService.getBooleanFlagEnabled(FeatureFlag.CLINE_PASS) ? "cline" : apiProvider
-
-	switch (effectiveApiProvider) {
+	switch (apiProvider) {
 		case "anthropic":
 			return new AnthropicHandler({
 				onRetryAttempt: options.onRetryAttempt,
@@ -136,6 +138,8 @@ function createHandlerForProvider(
 				vertexProjectId: options.vertexProjectId,
 				vertexRegion: options.vertexRegion,
 				apiModelId: mode === "plan" ? options.planModeApiModelId : options.actModeApiModelId,
+				vertexCustomModelInfo:
+					mode === "plan" ? options.planModeVertexCustomModelInfo : options.actModeVertexCustomModelInfo,
 				thinkingBudgetTokens:
 					mode === "plan" ? options.planModeThinkingBudgetTokens : options.actModeThinkingBudgetTokens,
 				geminiApiKey: options.geminiApiKey,
@@ -205,6 +209,7 @@ function createHandlerForProvider(
 				onRetryAttempt: options.onRetryAttempt,
 				deepSeekApiKey: options.deepSeekApiKey,
 				apiModelId: mode === "plan" ? options.planModeApiModelId : options.actModeApiModelId,
+				reasoningEffort: mode === "plan" ? options.planModeReasoningEffort : options.actModeReasoningEffort,
 			})
 		case "requesty":
 			return new RequestyHandler({
@@ -290,10 +295,15 @@ function createHandlerForProvider(
 				mode === "plan" ? options.planModeClinePassModelId : options.actModeClinePassModelId
 			const configuredClinePassModelInfo =
 				mode === "plan" ? options.planModeClinePassModelInfo : options.actModeClinePassModelInfo
-			const clineModelId = configuredClinePassModelId?.startsWith("cline-pass/")
-				? configuredClinePassModelId
-				: clinePassDefaultModelId
-			const clineModelInfo = configuredClinePassModelInfo || resolveClinePassModelInfo(clineModelId)
+			// ClinePass users may also select Cline free models (OpenRouter-style ids without
+			// the cline-pass/ prefix), so pass any configured id through to the Cline API.
+			const clineModelId = configuredClinePassModelId || clinePassDefaultModelId
+			const clineModelInfo = resolveClinePassModelInfo(
+				clineModelId,
+				configuredClinePassModelInfo
+					? buildModelInfoNameMap({ [clineModelId]: configuredClinePassModelInfo })
+					: undefined,
+			)
 			return new ClineHandler({
 				onRetryAttempt: options.onRetryAttempt,
 				clineAccountId: options.clineAccountId,

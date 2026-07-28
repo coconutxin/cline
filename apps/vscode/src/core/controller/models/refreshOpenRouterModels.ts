@@ -18,10 +18,12 @@ import {
 	CLAUDE_OPUS_1M_TIERS,
 	CLAUDE_SONNET_1M_TIERS,
 	openRouterClaudeFable51mModelId,
+	openRouterClaudeOpus51mModelId,
 	openRouterClaudeOpus461mModelId,
 	openRouterClaudeOpus471mModelId,
 	openRouterClaudeOpus481mModelId,
 	openRouterClaudeSonnet41mModelId,
+	openRouterClaudeSonnet51mModelId,
 	openRouterClaudeSonnet451mModelId,
 	openRouterClaudeSonnet461mModelId,
 } from "@/shared/api";
@@ -172,6 +174,16 @@ async function fetchAndCacheModels(
 				};
 
 				switch (rawModel.id) {
+					case "anthropic/claude-sonnet-5":
+					case "anthropic/claude-5-sonnet":
+						// NOTE: we artificially restrict the context window to 200k to keep costs low for users, and have a :1m model variant created below for users that want to use the full 1m.
+						modelInfo.contextWindow = 200_000
+						modelInfo.supportsPromptCache = true
+						modelInfo.inputPrice = 2.0
+						modelInfo.outputPrice = 10.0
+						modelInfo.cacheWritesPrice = 2.5
+						modelInfo.cacheReadsPrice = 0.2
+						break
 					case "anthropic/claude-sonnet-4.6":
 					case "anthropic/claude-4.6-sonnet":
 					case "anthropic/claude-sonnet-4.5":
@@ -194,6 +206,15 @@ async function fetchAndCacheModels(
 						modelInfo.supportsPromptCache = true;
 						modelInfo.cacheWritesPrice = 3.75;
 						modelInfo.cacheReadsPrice = 0.3;
+						break;
+					case "anthropic/claude-opus-5":
+					case "anthropic/claude-5-opus":
+						modelInfo.contextWindow = 200_000; // restrict to 200k, 1m variant created below
+						modelInfo.supportsPromptCache = true;
+						modelInfo.inputPrice = 5.0;
+						modelInfo.outputPrice = 25.0;
+						modelInfo.cacheWritesPrice = 6.25;
+						modelInfo.cacheReadsPrice = 0.5;
 						break;
 					case "anthropic/claude-opus-4.6":
 					case "anthropic/claude-opus-4.7":
@@ -324,11 +345,17 @@ async function fetchAndCacheModels(
 					rawModel.id === "anthropic/claude-sonnet-4.5" ||
 					rawModel.id === "anthropic/claude-4.5-sonnet" ||
 					rawModel.id === "anthropic/claude-sonnet-4.6" ||
-					rawModel.id === "anthropic/claude-4.6-sonnet"
+					rawModel.id === "anthropic/claude-4.6-sonnet" ||
+					rawModel.id === "anthropic/claude-sonnet-5" ||
+					rawModel.id === "anthropic/claude-5-sonnet"
 				) {
 					const claudeSonnet1mModelInfo = cloneDeep(modelInfo);
 					claudeSonnet1mModelInfo.contextWindow = 1_000_000; // limiting providers to those that support 1m context window
 					claudeSonnet1mModelInfo.tiers = CLAUDE_SONNET_1M_TIERS;
+					// sonnet 5
+					if (rawModel.id === "anthropic/claude-sonnet-5" || rawModel.id === "anthropic/claude-5-sonnet") {
+						models[openRouterClaudeSonnet51mModelId] = claudeSonnet1mModelInfo;
+					}
 					// sonnet 4
 					if (rawModel.id === "anthropic/claude-sonnet-4") {
 						models[openRouterClaudeSonnet41mModelId] = claudeSonnet1mModelInfo;
@@ -367,6 +394,12 @@ async function fetchAndCacheModels(
 					if (rawModel.id === "anthropic/claude-opus-4.8") {
 						models[openRouterClaudeOpus481mModelId] = claudeOpus1mModelInfo;
 					}
+				}
+				if (rawModel.id === "anthropic/claude-opus-5" || rawModel.id === "anthropic/claude-5-opus") {
+					const claudeOpus51mModelInfo = cloneDeep(modelInfo)
+					claudeOpus51mModelInfo.contextWindow = 1_000_000
+					claudeOpus51mModelInfo.tiers = CLAUDE_OPUS_1M_TIERS
+					models[openRouterClaudeOpus51mModelId] = claudeOpus51mModelInfo
 				}
 				if (rawModel.id === "anthropic/claude-fable-5") {
 					const claudeFable1mModelInfo = cloneDeep(modelInfo);
