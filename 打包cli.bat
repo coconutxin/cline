@@ -29,7 +29,8 @@ if errorlevel 1 (
 	exit /b 1
 )
 
-node package-cli-coconut.mjs %*
+set "DEFAULT_SYNC_TAG=v4.0.11"
+node package-cli-coconut.mjs --sync-tag "%DEFAULT_SYNC_TAG%" %*
 set "EXIT_CODE=%ERRORLEVEL%"
 
 popd

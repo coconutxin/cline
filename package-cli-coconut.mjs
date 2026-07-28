@@ -12,7 +12,7 @@ const outputDir = path.join(rootDir, "output", "cli")
 const upstreamRemoteName = "upstream"
 const upstreamRemoteUrl = "https://github.com/cline/cline.git"
 const syncBranch = "main"
-const defaultSyncTag = "v3.89.2"
+const defaultSyncTag = "v4.0.11"
 
 const requiredNodeMajor = 22
 const requiredBunVersion = "1.3.13"
