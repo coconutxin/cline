@@ -17,7 +17,6 @@ import { getDistinctId } from "./services/logging/distinctId"
 import { telemetryService } from "./services/telemetry"
 import { PostHogClientProvider } from "./services/telemetry/providers/posthog/PostHogClientProvider"
 import { ClineTempManager } from "./services/temp"
-import { checkOfficialMarketplaceUpdate } from "./services/update/OfficialMarketplaceUpdateService"
 import { cleanupTestMode } from "./services/test/TestMode"
 import { ShowMessageType } from "./shared/proto/host/window"
 import { syncWorker } from "./shared/services/worker/sync"
@@ -66,7 +65,6 @@ export async function initialize(storageContext: StorageContext): Promise<Webvie
 	const stateManager = StateManager.get()
 	// Non-blocking announcement check and display
 	showVersionUpdateAnnouncement(stateManager)
-	checkOfficialMarketplaceUpdate(stateManager)
 	// Check if this workspace was opened from worktree quick launch
 	await checkWorktreeAutoOpen(stateManager)
 

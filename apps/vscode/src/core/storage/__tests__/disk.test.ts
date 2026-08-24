@@ -7,6 +7,7 @@ import os from "os"
 import path from "path"
 import sinon from "sinon"
 import { HostProvider } from "@/hosts/host-provider"
+import * as telemetry from "@/services/telemetry"
 import { setVscodeHostProviderMock } from "@/test/host-provider-test-utils"
 import {
 	ensureStateDirectoryExists,
@@ -298,6 +299,36 @@ describe("disk - atomic writes", () => {
 	})
 
 	describe("writeTaskHistoryToState and readTaskHistoryFromState", () => {
+		it("should silently recover a corrupt task history once and preserve a backup", async () => {
+			const filePath = await getTaskHistoryStateFilePath()
+			const stateDir = path.dirname(filePath)
+			const corruptContents = '[{"id":"truncated"'
+
+			await fs.rm(path.join(testGlobalStorageDir, "tasks"), { recursive: true, force: true })
+			await fs.writeFile(filePath, corruptContents, "utf8")
+
+			const showMessageStub = sandbox.stub()
+			sandbox.stub(HostProvider, "window").value({ showMessage: showMessageStub } as any)
+
+			const captureExtensionStorageError = sandbox.stub()
+			sandbox.stub(telemetry, "telemetryService").value({ captureExtensionStorageError } as any)
+
+			const [firstRead, secondRead] = await Promise.all([readTaskHistoryFromState(), readTaskHistoryFromState()])
+
+			firstRead.should.deepEqual([])
+			secondRead.should.deepEqual([])
+			showMessageStub.called.should.equal(false)
+			captureExtensionStorageError.calledOnce.should.equal(true)
+
+			const repairedContents = await fs.readFile(filePath, "utf8")
+			JSON.parse(repairedContents).should.deepEqual([])
+
+			const backupFiles = (await fs.readdir(stateDir)).filter((name) => name.startsWith("taskHistory.backup."))
+			backupFiles.should.have.length(1)
+			const backupContents = await fs.readFile(path.join(stateDir, backupFiles[0]), "utf8")
+			backupContents.should.equal(corruptContents)
+		})
+
 		it("should write and read task history correctly", async () => {
 			const items = [createTestHistoryItem("test-1", "Build a todo app"), createTestHistoryItem("test-2", "Fix a bug")]
 

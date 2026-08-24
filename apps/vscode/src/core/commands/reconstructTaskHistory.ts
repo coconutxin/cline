@@ -1,9 +1,10 @@
-import { getSavedClineMessages, getTaskMetadata, readTaskHistoryFromState, writeTaskHistoryToState } from "@core/storage/disk"
+import { getSavedClineMessages, getTaskHistoryStateFilePath, getTaskMetadata, writeTaskHistoryToState } from "@core/storage/disk"
 import { HostProvider } from "@hosts/host-provider"
 import { ClineMessage } from "@shared/ExtensionMessage"
 import { HistoryItem } from "@shared/HistoryItem"
 import { ShowMessageType } from "@shared/proto/host/window"
 import { fileExistsAtPath } from "@utils/fs"
+import fs from "fs/promises"
 import * as path from "path"
 import { ulid } from "ulid"
 import { Logger } from "@/shared/services/Logger"
@@ -22,18 +23,20 @@ interface TaskReconstructionResult {
  */
 export async function reconstructTaskHistory(showNotifications = true): Promise<TaskReconstructionResult | null> {
 	try {
-		// Show confirmation dialog using HostProvider
-		const proceed = await HostProvider.window.showMessage({
-			type: ShowMessageType.WARNING,
-			message:
-				"This will rebuild your task history from existing task data. This operation will backup your current task history and attempt to reconstruct it from task folders. Continue?",
-			options: {
-				items: ["Yes, Reconstruct", "Cancel"],
-			},
-		})
+		if (showNotifications) {
+			// Manual reconstruction requires confirmation. Automatic startup recovery must never block on UI.
+			const proceed = await HostProvider.window.showMessage({
+				type: ShowMessageType.WARNING,
+				message:
+					"This will rebuild your task history from existing task data. This operation will backup your current task history and attempt to reconstruct it from task folders. Continue?",
+				options: {
+					items: ["Yes, Reconstruct", "Cancel"],
+				},
+			})
 
-		if (proceed?.selectedOption !== "Yes, Reconstruct") {
-			return null
+			if (proceed?.selectedOption !== "Yes, Reconstruct") {
+				return null
+			}
 		}
 
 		if (showNotifications) {
@@ -133,14 +136,12 @@ async function performTaskHistoryReconstruction(): Promise<TaskReconstructionRes
 
 async function backupExistingTaskHistory(): Promise<void> {
 	try {
-		const existingHistory = await readTaskHistoryFromState()
-		if (existingHistory.length > 0) {
-			const backupPath = path.join(HostProvider.get().globalStorageFsPath, "state", `taskHistory.backup.${Date.now()}.json`)
+		const taskHistoryPath = await getTaskHistoryStateFilePath()
+		if (await fileExistsAtPath(taskHistoryPath)) {
+			const backupPath = path.join(path.dirname(taskHistoryPath), `taskHistory.backup.${Date.now()}.json`)
 
-			// Ensure state directory exists
-			const fs = await import("fs/promises")
-			await fs.mkdir(path.dirname(backupPath), { recursive: true })
-			await fs.writeFile(backupPath, JSON.stringify(existingHistory, null, 2))
+			// Preserve the original bytes, including malformed JSON, without re-entering recovery.
+			await fs.copyFile(taskHistoryPath, backupPath)
 		}
 	} catch (error) {
 		// Non-fatal error, just log it
